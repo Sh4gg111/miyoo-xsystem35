@@ -1,0 +1,32 @@
+# Pacotes gerados pelo package.sh (contem os arquivos dos jogos)
+dist/
+
+# Arquivos dos jogos nunca entram no repositorio
+*.ALD
+*.ald
+*.ain
+*.gr
+*.sf2
+*.mp3
+*.ogg
+*.ttf
+*.otf
+*.tar
+*.tar.gz
+*.AppImage
+*.7z
+*.zip
+
+# Capas (arte oficial dos jogos)
+*.png
+*.jpg
+
+# Lixo do Python / editores
+__pycache__/
+*.pyc
+*.swp
+*~
+
+# Metadados que o Windows cria ao copiar arquivos baixados
+*:Zone.Identifier
+*Zone.Identifier
