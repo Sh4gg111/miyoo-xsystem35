@@ -150,6 +150,20 @@ fi
 ##############################################################################
 # 4. Arquivos do jogo (opcional: voce tambem pode copiar direto pro cartao SD)
 ##############################################################################
+if [ -n "$GAME_SRC" ] && [ -d "$GAME_SRC" ]; then
+    # Jogos com musica MIDI (trazem um .sf2): grava as musicas em MP3 uma vez,
+    # porque sintetizar MIDI no Miyoo e pesado demais.
+    if [ -n "$(find "$GAME_SRC" -maxdepth 1 -iname '*.sf2' -print -quit)" ] && [ ! -d "$GAME_SRC/midi" ]; then
+        echo "==> Jogo com musica MIDI: gravando as musicas em MP3 (so na primeira vez)"
+        if ! python3 "$HERE/prerender_midi.py" "$GAME_SRC"; then
+            echo "ERRO: falhou ao gravar as musicas. Instale: sudo apt install fluidsynth ffmpeg"
+            rm -rf "$GAME_SRC/midi"
+            exit 1
+        fi
+        chown -R "$OWNER" "$GAME_SRC/midi" 2>/dev/null || true
+    fi
+fi
+
 if [ -n "$GAME_SRC" ]; then
     if [ -d "$GAME_SRC" ]; then
         echo "==> Copiando o jogo de $GAME_SRC (pode demorar)"
