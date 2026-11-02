@@ -176,3 +176,11 @@ If a game does not start, check
 The scripts and the Miyoo patch are released under the **GNU GPL v2**
 (see `LICENSE`), the same license as xsystem35-sdl2. Third-party
 components keep their own licenses.
+
+## AI disclosure
+
+This project was developed with the help of an AI assistant (Claude, by
+Anthropic), which wrote most of the scripts and the Miyoo patch. Everything
+was built and tested on real hardware (Miyoo Mini with OnionOS), but expect
+rough edges: please report problems in the
+[Issues](../../issues) tab.
