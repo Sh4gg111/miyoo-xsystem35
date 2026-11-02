@@ -11,7 +11,7 @@ lento). Este script faz isso uma vez so, no PC:
 O xsystem35 do Miyoo (modo MIYOO_MINI) toca esses MP3 no lugar do MIDI.
 
 Uso:
-  python3 prerender_midi.py ~/Rance1
+  python3 tools/prerender_midi.py ~/Rance1
 
 Precisa de:  sudo apt install fluidsynth ffmpeg
 """

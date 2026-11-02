@@ -3,7 +3,12 @@
 # O mesmo binario serve para qualquer jogo suportado; so muda a pasta.
 #
 # Uso:
-#   sudo ./package.sh <xsystem35-sdl2> <pasta do jogo> [NomeDaPasta] ["Nome no menu"] [fonte.ttf]
+#   sudo ./package.sh [--release] <xsystem35-sdl2> <pasta do jogo> [NomeDaPasta] ["Nome no menu"] [fonte.ttf]
+#
+# --release: monta o pacote PUBLICO (para os Releases do GitHub): sem os
+#   arquivos do jogo, sem capa, com instrucoes em ingles e um .zip pronto em
+#   dist/<NomeDaPasta>-miyoo-onion.zip. A pasta do jogo ainda e necessaria:
+#   o script le dela o nome do arquivo *SA.ALD e se a musica e MIDI (.sf2).
 # Exemplos:
 #   sudo ./package.sh ~/xsystem35-sdl2 ~/KichikuouRance KichikuouRance "Kichikuou Rance"
 #   sudo ./package.sh ~/xsystem35-sdl2 ~/Rance1 Rance1 "Rance 1"
@@ -20,6 +25,12 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+RELEASE=0
+if [ "${1:-}" = "--release" ]; then
+    RELEASE=1
+    shift
+fi
+REPO_URL="https://github.com/Sh4gg111/miyoo-xsystem35"
 SRC="${1:-$HOME/xsystem35-sdl2}"
 GAME_SRC="${2:-}"
 APP_NAME="${3:-}"
@@ -50,6 +61,25 @@ if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
     exit 1
 fi
 
+GAME_DATA_FILE="xsystem35"
+IS_MIDI=0
+if [ "$RELEASE" = 1 ]; then
+    if [ -z "$GAME_SRC" ] || [ ! -d "$GAME_SRC" ]; then
+        echo "ERRO: no modo --release a pasta do jogo e obrigatoria (para achar o *SA.ALD)"
+        exit 1
+    fi
+    SA="$(find "$GAME_SRC" -maxdepth 1 -iname '*SA.ALD' -printf '%f\n' | head -1)"
+    if [ -z "$SA" ]; then
+        echo "ERRO: nao achei o arquivo *SA.ALD em $GAME_SRC"
+        exit 1
+    fi
+    # O Onion so mostra o port quando este arquivo existir (jogo instalado).
+    GAME_DATA_FILE="game/$SA"
+    if [ -n "$(find "$GAME_SRC" -maxdepth 1 -iname '*.sf2' -print -quit)" ]; then
+        IS_MIDI=1
+    fi
+fi
+
 DIST="$HERE/dist/$APP_NAME"
 PORTS="$DIST/Roms/PORTS"
 APP="$PORTS/Games/$APP_NAME"
@@ -74,8 +104,8 @@ docker run --rm --user "$OWNER" -v "$DIST":/dist "$IMAGE" \
 ##############################################################################
 # 2. Bibliotecas: SDL2 do Miyoo + EGL/GLES virtuais (guardados na imagem em
 #    /opt/miyoo-runtime), json-c, zlib e freetype do sysroot. As libs da
-#    SigmaStar (libmi_*, libshmvar) vao em lib/fallback/, que fica no FIM do
-#    LD_LIBRARY_PATH: so sao usadas se o aparelho nao tiver as dele.
+#    SigmaStar (libmi_*, libshmvar) NAO vao: o aparelho ja tem as dele
+#    (testado sem elas).
 ##############################################################################
 echo "==> Bibliotecas"
 docker run --rm --user "$OWNER" -v "$DIST":/dist "$IMAGE" bash -c '
@@ -99,13 +129,6 @@ docker run --rm --user "$OWNER" -v "$DIST":/dist "$IMAGE" bash -c '
         cp -L /opt/miyoo-runtime/libfluidsynth.so.3 "$OUT/"
         echo "  lib: libfluidsynth.so.3"
     fi
-
-    mkdir -p "$OUT/fallback"
-    for f in /opt/miyoo-runtime/libmi_*.so /opt/miyoo-runtime/libshmvar.so; do
-        [ -e "$f" ] || continue
-        cp -L "$f" "$OUT/fallback/"
-        echo "  lib (reserva): $(basename "$f")"
-    done
 
     find_lib() {
         for d in "$SYSROOT/usr/lib" "$SYSROOT/lib" "$SYSROOT/usr/lib/arm-linux-gnueabihf"; do
@@ -150,12 +173,12 @@ fi
 ##############################################################################
 # 4. Arquivos do jogo (opcional: voce tambem pode copiar direto pro cartao SD)
 ##############################################################################
-if [ -n "$GAME_SRC" ] && [ -d "$GAME_SRC" ]; then
+if [ "$RELEASE" = 0 ] && [ -n "$GAME_SRC" ] && [ -d "$GAME_SRC" ]; then
     # Jogos com musica MIDI (trazem um .sf2): grava as musicas em MP3 uma vez,
     # porque sintetizar MIDI no Miyoo e pesado demais.
     if [ -n "$(find "$GAME_SRC" -maxdepth 1 -iname '*.sf2' -print -quit)" ] && [ ! -d "$GAME_SRC/midi" ]; then
         echo "==> Jogo com musica MIDI: gravando as musicas em MP3 (so na primeira vez)"
-        if ! python3 "$HERE/prerender_midi.py" "$GAME_SRC"; then
+        if ! python3 "$HERE/tools/prerender_midi.py" "$GAME_SRC"; then
             echo "ERRO: falhou ao gravar as musicas. Instale: sudo apt install fluidsynth ffmpeg"
             rm -rf "$GAME_SRC/midi"
             exit 1
@@ -164,7 +187,13 @@ if [ -n "$GAME_SRC" ] && [ -d "$GAME_SRC" ]; then
     fi
 fi
 
-if [ -n "$GAME_SRC" ]; then
+if [ "$RELEASE" = 1 ]; then
+    echo "==> Release: sem os arquivos do jogo"
+    cat > "$APP/game/PUT_GAME_FILES_HERE.txt" <<PLACEHOLDER_EOF
+Copy the game files here (the .ALD files and everything else from the
+game folder). See ../INSTALL.txt.
+PLACEHOLDER_EOF
+elif [ -n "$GAME_SRC" ]; then
     if [ -d "$GAME_SRC" ]; then
         echo "==> Copiando o jogo de $GAME_SRC (pode demorar)"
         cp -r "$GAME_SRC"/. "$APP/game/"
@@ -186,7 +215,7 @@ LOGFILE="$APPDIR/log/run.log"
 
 # Bibliotecas: as nossas primeiro; depois as do firmware do aparelho
 # (libmi_*, libshmvar, libjson-c) e as do Onion.
-export LD_LIBRARY_PATH="$APPDIR/lib:/config/lib:/customer/lib:/mnt/SDCARD/miyoo/lib:/mnt/SDCARD/.tmp_update/lib:${LD_LIBRARY_PATH:-}:$APPDIR/lib/fallback"
+export LD_LIBRARY_PATH="$APPDIR/lib:/config/lib:/customer/lib:/mnt/SDCARD/miyoo/lib:/mnt/SDCARD/.tmp_update/lib:${LD_LIBRARY_PATH:-}"
 
 # Drivers do SDL2 do Miyoo Mini (steward-fu/sdl2). Os nomes vem dos
 # VideoBootStrap/AudioBootStrap do codigo: video "Mini", audio "Miyoo Mini".
@@ -264,7 +293,7 @@ cat > "$SHORTCUTS/$APP_NAME.port" <<PORT_EOF
 GameName="$GAME_TITLE"
 GameDir="$APP_NAME"
 GameExecutable="xsystem35"
-GameDataFile="xsystem35"
+GameDataFile="$GAME_DATA_FILE"
 
 cd "/mnt/SDCARD/Roms/PORTS/Games/\$GameDir"
 exec sh ./launch.sh
@@ -276,7 +305,9 @@ chmod 755 "$SHORTCUTS/$APP_NAME.port"
 #     Usa a <NomeDaPasta>.png que estiver na mesma pasta deste script.
 ##############################################################################
 BOX_ART="$HERE/$APP_NAME.png"
-if [ -f "$BOX_ART" ]; then
+if [ "$RELEASE" = 1 ]; then
+    echo "==> Release: sem capa"
+elif [ -f "$BOX_ART" ]; then
     mkdir -p "$PORTS/Imgs"
     cp "$BOX_ART" "$PORTS/Imgs/$APP_NAME.png"
     echo "==> Capa: $APP_NAME.png"
@@ -287,6 +318,70 @@ fi
 ##############################################################################
 # 7. Instrucoes
 ##############################################################################
+if [ "$RELEASE" = 1 ]; then
+    if [ "$IS_MIDI" = 1 ]; then
+        MIDI_STEP="
+3. This game's music is MIDI, which is too heavy to synthesize on the
+   Miyoo. Convert it to MP3 once, on a PC, before copying the game.
+
+   Requirements: Linux, or Windows with WSL (Ubuntu), plus:
+       sudo apt install python3 fluidsynth ffmpeg
+
+   The converter is in this zip, in the tools folder. From the folder
+   where you extracted the zip, run it on the extracted game folder (the
+   one with the .ALD files and TimGM6mb.sf2):
+       python3 tools/prerender_midi.py <game folder>
+
+   It creates a \"midi\" folder inside the game folder. Copy it together
+   with the rest of the game in the next step.
+"
+        NEXT=4
+    else
+        MIDI_STEP=""
+        NEXT=3
+    fi
+    cat > "$APP/INSTALL.txt" <<RELEASE_EOF
+$GAME_TITLE for Miyoo Mini / Miyoo Mini Plus (OnionOS)
+============================================================
+xsystem35-sdl2 port. Source and instructions: $REPO_URL
+
+This package does NOT include the game. Get it for free from
+https://haniwa.technology/games/ (the English .tar.gz build).
+
+1. Extract this zip on your PC.
+
+2. Extract the game .tar.gz on your PC.
+\${MIDI_STEP}
+\${NEXT}. Copy everything from the game folder into the zip's
+   Roms/PORTS/Games/$APP_NAME/game/ folder.
+
+$((NEXT+1)). Copy the Roms folder to the ROOT of the SD card (it merges with
+   the Roms folder already there).
+
+$((NEXT+2)). In OnionOS, open Ports and run "~Import ports". The game shows up
+   once its files are in place.
+
+CONTROLS
+  D-pad ............ move the cursor (hold to accelerate)
+  R1 (hold) ........ fast cursor
+  L1 + D-pad ....... keyboard arrow keys
+  A ................ left click
+  B ................ right click (cancel / game menu)
+  Start ............ Enter
+  Select ........... toggle message skip
+  Menu ............. quit dialog (A confirms, B cancels)
+
+If the game does not start, check:
+       Roms/PORTS/Games/$APP_NAME/log/run.log
+RELEASE_EOF
+    # As variaveis do texto acima foram escritas literalmente; trocar agora.
+    python3 - "$APP/INSTALL.txt" "$MIDI_STEP" "$NEXT" <<'PYEOF'
+import sys
+path, midi, nxt = sys.argv[1], sys.argv[2], sys.argv[3]
+t = open(path).read().replace("${MIDI_STEP}", midi).replace("${NEXT}", nxt)
+open(path, "w").write(t)
+PYEOF
+else
 cat > "$APP/INSTALL.txt" <<INSTALL_EOF
 $GAME_TITLE (xsystem35-sdl2) para Miyoo Mini + OnionOS
 =====================================================
@@ -316,6 +411,7 @@ CONTROLES
 Se nao abrir, veja o arquivo:
        /Roms/PORTS/Games/$APP_NAME/log/run.log
 INSTALL_EOF
+fi
 
 # Se rodou com sudo, devolver os arquivos para o seu usuario.
 chown -R "$OWNER" "$DIST" 2>/dev/null || true
@@ -327,4 +423,35 @@ echo
 echo "Estrutura:"
 ( cd "$DIST" && find Roms -maxdepth 4 | sort )
 echo
-echo "Copie a pasta Roms para a raiz do cartao SD do Miyoo Mini."
+if [ "$RELEASE" = 1 ]; then
+    ZIP="$HERE/dist/$APP_NAME-miyoo-onion.zip"
+    rm -f "$ZIP"
+    rm -rf "$DIST/tools"
+    if [ "$IS_MIDI" = 1 ]; then
+        mkdir -p "$DIST/tools"
+        cp "$HERE/tools/prerender_midi.py" "$DIST/tools/"
+        echo "==> Release: tools/prerender_midi.py incluido (musica MIDI)"
+    fi
+    python3 - "$DIST" "$ZIP" <<'PYEOF'
+import os, sys, zipfile
+root, out = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+    tools = os.path.join(root, "tools")
+    if os.path.isdir(tools):
+        for f in sorted(os.listdir(tools)):
+            z.write(os.path.join(tools, f), os.path.join("tools", f))
+    for d, dirs, files in os.walk(os.path.join(root, "Roms")):
+        dirs.sort()
+        rel = os.path.relpath(d, root)
+        if not files and not dirs:
+            z.write(d, rel + "/")
+        for f in sorted(files):
+            full = os.path.join(d, f)
+            z.write(full, os.path.join(rel, f))
+PYEOF
+    chown "$OWNER" "$ZIP" 2>/dev/null || true
+    echo "==> Zip do Release: $ZIP"
+    du -h "$ZIP"
+else
+    echo "Copie a pasta Roms para a raiz do cartao SD do Miyoo Mini."
+fi
