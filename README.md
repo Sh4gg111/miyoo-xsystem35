@@ -180,7 +180,7 @@ components keep their own licenses.
 ## AI disclosure
 
 This project was developed with the help of an AI assistant (Claude, by
-Anthropic), which wrote most of the scripts and the Miyoo patch. Everything
-was built and tested on real hardware (Miyoo Mini with OnionOS), but expect
+Anthropic), which helped writing most of the scripts and the Miyoo patch. Everything
+was built and tested on real hardware (Miyoo Mini Plus with OnionOS), but expect
 rough edges: please report problems in the
 [Issues](../../issues) tab.
