@@ -74,7 +74,9 @@ if [ "$RELEASE" = 1 ]; then
         exit 1
     fi
     # O Onion so mostra o port quando este arquivo existir (jogo instalado).
-    GAME_DATA_FILE="game/$SA"
+    # O ~Import ports procura com  find <GameDir> -maxdepth 2 -iname <nome>,
+    # entao aqui vai SO o nome do arquivo (acha em game/, que e nivel 2).
+    GAME_DATA_FILE="$SA"
     if [ -n "$(find "$GAME_SRC" -maxdepth 1 -iname '*.sf2' -print -quit)" ]; then
         IS_MIDI=1
     fi
