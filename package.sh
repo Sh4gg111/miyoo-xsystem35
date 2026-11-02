@@ -319,26 +319,33 @@ fi
 # 7. Instrucoes
 ##############################################################################
 if [ "$RELEASE" = 1 ]; then
+    # A ferramenta de MIDI vai dentro da pasta do port (Roms/.../tools/).
     if [ "$IS_MIDI" = 1 ]; then
+        mkdir -p "$APP/tools"
+        cp "$HERE/tools/prerender_midi.py" "$APP/tools/"
+        echo "==> Release: tools/prerender_midi.py incluido (musica MIDI)"
         MIDI_STEP="
-3. This game's music is MIDI, which is too heavy to synthesize on the
-   Miyoo. Convert it to MP3 once, on a PC, before copying the game.
+4. This game's music is MIDI, which is too heavy to synthesize on the
+   Miyoo. Convert it to MP3 once, on the PC:
 
    Requirements: Linux, or Windows with WSL (Ubuntu), plus:
        sudo apt install python3 fluidsynth ffmpeg
 
-   The converter is in this zip, in the tools folder. From the folder
-   where you extracted the zip, run it on the extracted game folder (the
-   one with the .ALD files and TimGM6mb.sf2):
-       python3 tools/prerender_midi.py <game folder>
+   a. Move prerender_midi.py from
+          Roms/PORTS/Games/$APP_NAME/tools/
+      into the folder with the game's .ALD files:
+          Roms/PORTS/Games/$APP_NAME/game/
+   b. Open a WSL terminal in that game folder. On Windows: open the
+      folder in File Explorer, type  wsl  in the address bar, press Enter.
+   c. Run:
+          python3 prerender_midi.py
 
-   It creates a \"midi\" folder inside the game folder. Copy it together
-   with the rest of the game in the next step.
+   It creates a \"midi\" folder there, with one MP3 per track.
 "
-        NEXT=4
+        NEXT=5
     else
         MIDI_STEP=""
-        NEXT=3
+        NEXT=4
     fi
     cat > "$APP/INSTALL.txt" <<RELEASE_EOF
 $GAME_TITLE for Miyoo Mini / Miyoo Mini Plus (OnionOS)
@@ -351,14 +358,15 @@ https://haniwa.technology/games/ (the English .tar.gz build).
 1. Extract this zip on your PC.
 
 2. Extract the game .tar.gz on your PC.
-\${MIDI_STEP}
-\${NEXT}. Copy everything from the game folder into the zip's
-   Roms/PORTS/Games/$APP_NAME/game/ folder.
 
-$((NEXT+1)). Copy the Roms folder to the ROOT of the SD card (it merges with
+3. Copy everything from the game folder (the .ALD files and the rest)
+   into the zip's folder:
+       Roms/PORTS/Games/$APP_NAME/game/
+\${MIDI_STEP}
+\${NEXT}. Copy the Roms folder to the ROOT of the SD card (it merges with
    the Roms folder already there).
 
-$((NEXT+2)). In OnionOS, open Ports and run "~Import ports". The game shows up
+$((NEXT+1)). In OnionOS, open Ports and run "~Import ports". The game shows up
    once its files are in place.
 
 CONTROLS
@@ -426,20 +434,10 @@ echo
 if [ "$RELEASE" = 1 ]; then
     ZIP="$HERE/dist/$APP_NAME-miyoo-onion.zip"
     rm -f "$ZIP"
-    rm -rf "$DIST/tools"
-    if [ "$IS_MIDI" = 1 ]; then
-        mkdir -p "$DIST/tools"
-        cp "$HERE/tools/prerender_midi.py" "$DIST/tools/"
-        echo "==> Release: tools/prerender_midi.py incluido (musica MIDI)"
-    fi
     python3 - "$DIST" "$ZIP" <<'PYEOF'
 import os, sys, zipfile
 root, out = sys.argv[1], sys.argv[2]
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-    tools = os.path.join(root, "tools")
-    if os.path.isdir(tools):
-        for f in sorted(os.listdir(tools)):
-            z.write(os.path.join(tools, f), os.path.join("tools", f))
     for d, dirs, files in os.walk(os.path.join(root, "Roms")):
         dirs.sort()
         rel = os.path.relpath(d, root)

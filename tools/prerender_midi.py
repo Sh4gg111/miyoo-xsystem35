@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
-"""Pre-grava as musicas MIDI de um jogo System 3.x em MP3.
+"""Pre-render the MIDI music of a System 3.x game to MP3.
 
-Sintetizar MIDI no Miyoo Mini pesa demais (a musica engasga e o jogo fica
-lento). Este script faz isso uma vez so, no PC:
+Synthesizing MIDI on the Miyoo Mini is too heavy (the music stutters and
+the game slows down). This script does it once, on a PC:
 
-  1. extrai os MIDIs do arquivo *MA.ALD do jogo;
-  2. toca cada um com o FluidSynth usando o banco de sons (.sf2) do jogo;
-  3. converte para MP3 em <pasta do jogo>/midi/<numero>.mp3.
+  1. extracts the MIDI tracks from the game's *MA.ALD file;
+  2. plays each one with FluidSynth using the game's sound bank (.sf2);
+  3. converts them to MP3 in <game folder>/midi/<number>.mp3.
 
-O xsystem35 do Miyoo (modo MIYOO_MINI) toca esses MP3 no lugar do MIDI.
+The Miyoo build of xsystem35 (MIYOO_MINI) plays these MP3s instead of MIDI.
 
-Uso:
-  python3 tools/prerender_midi.py ~/Rance1
+Usage:
+  python3 prerender_midi.py              (run inside the game folder)
+  python3 prerender_midi.py ~/Rance1     (or give the game folder)
 
-Precisa de:  sudo apt install fluidsynth ffmpeg
+Requires:  sudo apt install python3 fluidsynth ffmpeg
 """
 import glob
 import os
@@ -36,13 +37,13 @@ def get4(b, o):
 
 
 def read_ald(volumes):
-    """volumes: {numero_do_volume: caminho}. Retorna {indice: bytes}."""
+    """volumes: {volume_number: path}. Returns {index: bytes}."""
     data = {vol: open(path, "rb").read() for vol, path in volumes.items()}
     first = data[min(data)]
     ofssize = get3(first, 0) << 8
     linksize = (get3(first, 3) << 8) - ofssize
     if ofssize <= 0 or linksize <= 0 or ofssize + linksize > len(first):
-        raise SystemExit("ERRO: o arquivo nao parece um .ALD valido")
+        raise SystemExit("ERROR: this does not look like a valid .ALD file")
     link = first[ofssize:ofssize + linksize]
 
     files = {}
@@ -64,7 +65,7 @@ def read_ald(volumes):
 
 
 def find_volumes(game_dir):
-    """Acha <nome>MA.ALD, <nome>MB.ALD... (letra do volume no fim)."""
+    """Finds <name>MA.ALD, <name>MB.ALD... (volume letter at the end)."""
     found = {}
     for path in glob.glob(os.path.join(game_dir, "*")):
         name = os.path.basename(path)
@@ -77,38 +78,39 @@ def find_volumes(game_dir):
 
 
 def main():
-    if len(sys.argv) != 2:
-        raise SystemExit("uso: prerender_midi.py <pasta do jogo>")
-    game_dir = os.path.abspath(os.path.expanduser(sys.argv[1]))
+    if len(sys.argv) > 2:
+        raise SystemExit("usage: prerender_midi.py [game folder]  (default: current folder)")
+    game_dir = os.path.abspath(os.path.expanduser(sys.argv[1] if len(sys.argv) == 2 else "."))
+    print("Game folder:", game_dir)
 
     for tool in ("fluidsynth", "ffmpeg"):
         if not shutil.which(tool):
-            raise SystemExit(f"ERRO: falta o programa '{tool}'. "
-                             "Instale com: sudo apt install fluidsynth ffmpeg")
+            raise SystemExit(f"ERROR: '{tool}' is missing. "
+                             "Install it with: sudo apt install fluidsynth ffmpeg")
 
     sf2 = sorted(glob.glob(os.path.join(game_dir, "*.sf2")) +
                  glob.glob(os.path.join(game_dir, "*.SF2")))
     if not sf2:
-        raise SystemExit("ERRO: nenhum banco de sons .sf2 na pasta do jogo")
+        raise SystemExit("ERROR: no .sf2 sound bank in the game folder (are you in the folder with the .ALD files?)")
     sf2 = sf2[0]
 
     volumes = find_volumes(game_dir)
     if not volumes:
-        raise SystemExit("ERRO: nenhum arquivo de musica *MA.ALD na pasta do jogo")
-    print("Arquivos de musica:", ", ".join(os.path.basename(p) for p in volumes.values()))
-    print("Banco de sons:", os.path.basename(sf2))
+        raise SystemExit("ERROR: no *MA.ALD music file in the game folder")
+    print("Music files:", ", ".join(os.path.basename(p) for p in volumes.values()))
+    print("Sound bank:", os.path.basename(sf2))
 
     files = read_ald(volumes)
     midis = {i: d for i, d in files.items() if d[:4] == b"MThd"}
     if not midis:
-        raise SystemExit("ERRO: nenhum MIDI encontrado dentro do .ALD")
-    print(f"{len(midis)} musicas MIDI encontradas")
+        raise SystemExit("ERROR: no MIDI tracks found inside the .ALD")
+    print(f"{len(midis)} MIDI tracks found")
 
     out_dir = os.path.join(game_dir, "midi")
     os.makedirs(out_dir, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         for i, data in sorted(midis.items()):
-            no = i + 1  # o jogo pede a musica "no"; o indice no ALD e no-1
+            no = i + 1  # the game asks for track "no"; its ALD index is no-1
             mid = os.path.join(tmp, f"{no}.mid")
             wav = os.path.join(tmp, f"{no}.wav")
             mp3 = os.path.join(out_dir, f"{no}.mp3")
@@ -120,8 +122,8 @@ def main():
             subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", wav,
                             "-ac", "2", "-ar", "44100", "-b:a", "128k", mp3],
                            check=True)
-            print(f"  musica {no}: {os.path.getsize(mp3) // 1024} KB")
-    print(f"Pronto: {out_dir}")
+            print(f"  track {no}: {os.path.getsize(mp3) // 1024} KB")
+    print(f"Done: {out_dir}")
 
 
 if __name__ == "__main__":

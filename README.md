@@ -26,22 +26,16 @@ Ready-to-use packages are on the [Releases](../../releases) page, one zip
 per game. They contain the port only (the Miyoo build of xsystem35, its
 libraries, the launcher and the OnionOS shortcut), **not the game**. The
 zips for MIDI games (Rance 1 and Rance III) also include the music
-converter in a `tools` folder.
-
-```
-<Name>-miyoo-onion.zip
-├── Roms/PORTS/...            → goes to the SD card
-└── tools/prerender_midi.py   → stays on the PC (MIDI games only)
-```
+converter, in `Roms/PORTS/Games/<Name>/tools/`.
 
 1. Extract the zip on your PC.
 2. Download the English `.tar.gz` of the same game from
    [haniwa.technology](https://haniwa.technology/games/) and extract it on
    your PC.
-3. **Rance 1 and Rance III only:** convert the MIDI music to MP3 (see
+3. Copy everything from the game folder (the `.ALD` files and the rest)
+   into the zip's `Roms/PORTS/Games/<Name>/game/` folder.
+4. **Rance 1 and Rance III only:** convert the MIDI music to MP3 (see
    [MIDI music](#midi-music-rance-1-and-rance-iii) below).
-4. Copy everything from the game folder (including the `midi` folder, if
-   you made one) into the zip's `Roms/PORTS/Games/<Name>/game/` folder.
 5. Copy the `Roms` folder to the **root of the SD card** (it merges with the
    `Roms` folder already there).
 6. In OnionOS, open **Ports** and run **~Import ports**. The game appears
@@ -51,7 +45,7 @@ converter in a `tools` folder.
 
 These two games store their soundtrack as MIDI, and synthesizing MIDI in
 real time is too heavy for the Miyoo: the music stutters and the game slows
-down. `tools/prerender_midi.py` converts the tracks to MP3 **once, on a PC**,
+down. `prerender_midi.py` converts the tracks to MP3 **once, on a PC**,
 using the game's own sound bank (`TimGM6mb.sf2`), so they sound the same as
 on the PC. The MP3 files are not included in the releases because they are
 generated from the game files.
@@ -63,20 +57,20 @@ generated from the game files.
 sudo apt install python3 fluidsynth ffmpeg
 ```
 
-**Steps:**
+**Steps** (after copying the game into `Roms/PORTS/Games/<Name>/game/`):
 
-1. Open a terminal in the folder where you extracted the release zip (the
-   one that contains `tools/`). The script is also in this repository:
-   [`tools/prerender_midi.py`](tools/prerender_midi.py).
-2. Run it on the extracted game folder (the one with the `.ALD` files and
-   `TimGM6mb.sf2`). Use the path where **you** extracted the game, e.g.:
+1. Move `prerender_midi.py` from `Roms/PORTS/Games/<Name>/tools/` into
+   `Roms/PORTS/Games/<Name>/game/`, the folder with the `.ALD` files and
+   `TimGM6mb.sf2`. (The script is also in this repository:
+   [`tools/prerender_midi.py`](tools/prerender_midi.py).)
+2. Open a WSL terminal in that folder. On Windows: open the folder in File
+   Explorer, type `wsl` in the address bar and press Enter.
+3. Run:
    ```sh
-   python3 tools/prerender_midi.py ~/Rance1    # Rance 1
-   python3 tools/prerender_midi.py ~/Rance3    # Rance III
+   python3 prerender_midi.py
    ```
-3. It creates a `midi` folder inside the game folder, with one MP3 per
-   track (`1.mp3`, `2.mp3`, …). Copy it to the SD card along with the rest
-   of the game.
+4. It creates a `midi` folder there, with one MP3 per track (`1.mp3`,
+   `2.mp3`, …). It goes to the SD card together with the rest of the game.
 
 Without the `midi` folder the game still runs, but it falls back to
 synthesizing the MIDI on the Miyoo, so the music stutters and the game slows down.
@@ -149,7 +143,8 @@ sudo ./package.sh --release ~/xsystem35-sdl2 ~/Rance1 Rance1 "Rance 1"
 
 This builds `dist/Rance1-miyoo-onion.zip` without the game files, the MIDI
 MP3s or the box art, with English install instructions. For MIDI games it
-adds `tools/prerender_midi.py` and the MIDI step to the instructions. The OnionOS shortcut stays hidden until the
+adds `prerender_midi.py` in `Roms/PORTS/Games/<Name>/tools/` and the MIDI
+step to the instructions. The OnionOS shortcut stays hidden until the
 game's `*SA.ALD` file is copied into `game/`.
 
 If a game does not start, check
