@@ -30,6 +30,7 @@
 
 #ifdef MIYOO_MINI
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "sdl_compat.h"
@@ -732,8 +733,89 @@ void miyoo_update(void) {
 	}
 }
 
+/* ---------------------------------------------------------------------- */
+/* Ritmo dos quadros e medicao                                             */
+/* ---------------------------------------------------------------------- */
+
+static Uint64 frame_start, frame_copied;
+
+/* Medicao enquanto o cursor anda; vai para log/run.log a cada 3 s
+   (so com MIYOO_FPS_LOG=1).
+   copia = cursor + SDL_RenderCopy (no SDL do Miyoo copia a tela inteira
+   para a memoria da GPU e gira 180 graus); troca = SDL_RenderPresent. */
+static struct {
+	Uint64 t0, last;
+	int frames;
+	double copy_sum, copy_max, flip_sum, flip_max, gap_max;
+} st;
+
+static double ms_between(Uint64 a, Uint64 b) {
+	return (b - a) * 1000.0 / SDL_GetPerformanceFrequency();
+}
+
+void miyoo_frame_begin(void) {
+	frame_start = SDL_GetPerformanceCounter();
+	frame_copied = 0;
+}
+
+void miyoo_frame_copied(void) {
+	frame_copied = SDL_GetPerformanceCounter();
+}
+
 void miyoo_on_present(void) {
 	last_present = SDL_GetTicks();
+	/* A medicao so liga com MIYOO_FPS_LOG=1 (ver launch.sh). */
+	static int log_on = -1;
+	if (log_on < 0) {
+		const char *v = getenv("MIYOO_FPS_LOG");
+		log_on = v && *v == '1';
+	}
+	if (!log_on || !move_since || !frame_start || !frame_copied) {
+		st.t0 = 0;
+		return;
+	}
+	Uint64 now = SDL_GetPerformanceCounter();
+	if (!st.t0) {
+		memset(&st, 0, sizeof(st));
+		st.t0 = st.last = now;
+		return;
+	}
+	double copy = ms_between(frame_start, frame_copied);
+	double flip = ms_between(frame_copied, now);
+	double gap = ms_between(st.last, now);
+	st.last = now;
+	st.frames++;
+	st.copy_sum += copy;
+	st.flip_sum += flip;
+	if (copy > st.copy_max) st.copy_max = copy;
+	if (flip > st.flip_max) st.flip_max = flip;
+	if (gap > st.gap_max) st.gap_max = gap;
+	double total = ms_between(st.t0, now);
+	if (total >= 3000) {
+		fprintf(stderr, "[miyoo] cursor: %.1f quadros/s | copia %.1f ms (max %.1f) | troca %.1f ms (max %.1f) | maior intervalo %.1f ms\n",
+		        st.frames * 1000.0 / total, st.copy_sum / st.frames, st.copy_max,
+		        st.flip_sum / st.frames, st.flip_max, st.gap_max);
+		st.t0 = 0;
+	}
+}
+
+void miyoo_wait_frame(void) {
+	/* Mira em 60 quadros/s com ritmo fixo: dorme so o que falta ate o
+	   proximo quadro (o original dormia 16 ms DEPOIS de desenhar). Se o
+	   quadro atrasou, segue direto, sem dormir. Se atrasou muito (jogo
+	   carregando algo), recomeca a contagem. */
+	static Uint64 next;
+	Uint64 freq = SDL_GetPerformanceFrequency();
+	Uint64 period = freq / 60;
+	Uint64 now = SDL_GetPerformanceCounter();
+	if (!next || now > next + period * 3)
+		next = now;
+	next += period;
+	if (next > now) {
+		Uint32 ms = (Uint32)((next - now) * 1000 / freq);
+		if (ms > 0)
+			SDL_Delay(ms);
+	}
 }
 
 #endif /* MIYOO_MINI */

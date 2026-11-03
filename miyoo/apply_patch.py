@@ -6,7 +6,7 @@ Uso: python3 apply_patch.py ~/xsystem35-sdl2
 - copia miyoo.c e miyoo.h para src/
 - adiciona miyoo.c na lista de fontes do CMake
 - insere ganchos (todos dentro de #ifdef MIYOO_MINI) em event.c,
-  gfx_draw.c e gfx_video.c
+  gfx_draw.c, gfx_video.c, effect.c, midi.sdlmixer.c e system.c
 
 Pode ser rodado varias vezes: o que ja foi aplicado e pulado.
 """
@@ -51,7 +51,7 @@ def main():
     # nova deste patch substitua a anterior.
     import subprocess
     files = ["src/event.c", "src/gfx_draw.c", "src/gfx_video.c", "src/effect.c",
-             "src/midi.sdlmixer.c", "src/CMakeLists.txt"]
+             "src/midi.sdlmixer.c", "src/system.c", "src/CMakeLists.txt"]
     r = subprocess.run(["git", "-C", str(root), "checkout", "--"] + files,
                        capture_output=True, text=True)
     if r.returncode == 0:
@@ -102,10 +102,16 @@ def main():
         ("\tif (!gfx_dirty)\n\t\treturn;\n\tSDL_RenderClear(gfx_renderer);\n",
          "\tif (!gfx_dirty)\n\t\treturn;\n"
          "#ifdef MIYOO_MINI\n"
+         "\tmiyoo_frame_begin();\n"
          "\tif (!redraw_handler)\n"
          "\t\tmiyoo_cursor_show();\n"
          "#endif\n"
          "\tSDL_RenderClear(gfx_renderer);\n"),
+        ("\tmodal_render_overlay();\n",
+         "#ifdef MIYOO_MINI\n"
+         "\tmiyoo_frame_copied();\n"
+         "#endif\n"
+         "\tmodal_render_overlay();\n"),
         ("\tSDL_RenderPresent(gfx_renderer);\n\tgfx_dirty = false;\n",
          "\tSDL_RenderPresent(gfx_renderer);\n"
          "#ifdef MIYOO_MINI\n"
@@ -175,8 +181,8 @@ def main():
          "\tmiyoo_comp_end();\n"
          "#endif\n"),
     ])
-    # midi.sdlmixer.c: tocar musica MIDI pre-gravada (midi/<numero>.mp3 ou
-    # .ogg na pasta do jogo) em vez de sintetizar no aparelho, que e pesado
+    # midi.sdlmixer.c: tocar musica MIDI pre-gravada (midi/<numero>.wav, .mp3
+    # ou .ogg na pasta do jogo) em vez de sintetizar no aparelho, que e pesado
     # demais para o Miyoo.
     patch(srcdir / "midi.sdlmixer.c", [
         ('#include "mixer.h"\n',
@@ -184,11 +190,11 @@ def main():
          '#ifdef MIYOO_MINI\n'
          '#include <stdio.h>\n'
          '#include <sys/stat.h>\n'
-         '/* Procura midi/<no>.mp3 ou midi/<no>.ogg na pasta do jogo. */\n'
+         '/* Procura midi/<no>.wav, .mp3 ou .ogg na pasta do jogo. */\n'
          'static bool miyoo_prerendered(int no, char *path, size_t len) {\n'
-         '\tstatic const char *ext[] = { "mp3", "ogg" };\n'
+         '\tstatic const char *ext[] = { "wav", "mp3", "ogg" };\n'
          '\tstruct stat st;\n'
-         '\tfor (int i = 0; i < 2; i++) {\n'
+         '\tfor (int i = 0; i < 3; i++) {\n'
          '\t\tsnprintf(path, len, "midi/%d.%s", no, ext[i]);\n'
          '\t\tif (stat(path, &st) == 0)\n'
          '\t\t\treturn true;\n'
@@ -217,6 +223,18 @@ def main():
          "\telse\n"
          "#endif\n"
          "\tmusic = mixer_music_load_midi(data, datalen);\n"),
+    ])
+    # system.c: ritmo de quadros constante (~60/s). O original dorme 16 ms
+    # DEPOIS de desenhar; no Miyoo o desenho leva varios ms, entao os quadros
+    # ficavam irregulares e o cursor "tremia". Aqui dorme so o que falta.
+    patch(srcdir / "system.c", [
+        ('#include "scheduler.h"\n',
+         '#include "scheduler.h"\n'
+         '#ifdef MIYOO_MINI\n#include "miyoo.h"\n#endif\n'),
+        ("#else\n\tSDL_Delay(16);\n#endif\n",
+         "#elif defined(MIYOO_MINI)\n"
+         "\tmiyoo_wait_frame();\n"
+         "#else\n\tSDL_Delay(16);\n#endif\n"),
     ])
     print("==> Pronto.")
 

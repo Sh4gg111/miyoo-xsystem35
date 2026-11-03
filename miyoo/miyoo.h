@@ -23,8 +23,12 @@ void miyoo_destroy_texture(SDL_Texture *tx);
 void miyoo_comp_begin(void);
 bool miyoo_comp_draw(SDL_Texture *tx, const SDL_Rect *srcrect, const SDL_Rect *dstrect);
 void miyoo_comp_end(void);
-/* Avisa que a tela acabou de ser atualizada. */
+/* Inicio e fim de cada atualizacao da tela. */
+void miyoo_frame_begin(void);
+void miyoo_frame_copied(void);
 void miyoo_on_present(void);
+/* Espera ate o proximo quadro (substitui o SDL_Delay(16) do "vsync"). */
+void miyoo_wait_frame(void);
 #endif
 
 #endif

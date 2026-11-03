@@ -20,6 +20,7 @@
 #
 # Estrutura gerada:
 #   Roms/PORTS/Games/<NomeDaPasta>/   binario, launch.sh, lib/, fonts/, game/, save/
+#                                     (+ midiconv, se o jogo tiver musica MIDI)
 #   Roms/PORTS/Shortcuts/Adventure/<NomeDaPasta>.port
 #   Roms/PORTS/Imgs/<NomeDaPasta>.png   (capa, se existir <NomeDaPasta>.png ao lado do script)
 set -euo pipefail
@@ -77,9 +78,12 @@ if [ "$RELEASE" = 1 ]; then
     # O ~Import ports procura com  find <GameDir> -maxdepth 2 -iname <nome>,
     # entao aqui vai SO o nome do arquivo (acha em game/, que e nivel 2).
     GAME_DATA_FILE="$SA"
-    if [ -n "$(find "$GAME_SRC" -maxdepth 1 -iname '*.sf2' -print -quit)" ]; then
-        IS_MIDI=1
-    fi
+fi
+# Jogo com musica MIDI (traz um .sf2): vai junto o conversor midiconv, que
+# grava as musicas em WAV no proprio Miyoo na primeira vez que o jogo abre.
+if [ -n "$GAME_SRC" ] && [ -d "$GAME_SRC" ] && \
+   [ -n "$(find "$GAME_SRC" -maxdepth 1 -iname '*.sf2' -print -quit)" ]; then
+    IS_MIDI=1
 fi
 
 DIST="$HERE/dist/$APP_NAME"
@@ -102,6 +106,23 @@ chmod 755 "$APP/xsystem35"
 chown "$OWNER" "$APP/xsystem35" 2>/dev/null || true
 docker run --rm --user "$OWNER" -v "$DIST":/dist "$IMAGE" \
     arm-linux-gnueabihf-strip -s "/dist/Roms/PORTS/Games/$APP_NAME/xsystem35"
+
+##############################################################################
+# 1b. Conversor de musica MIDI (so para jogos com .sf2)
+##############################################################################
+if [ "$IS_MIDI" = 1 ]; then
+    echo "==> Conversor de musica MIDI (midiconv)"
+    docker run --rm --user "$OWNER" -v "$HERE":/src:ro -v "$DIST":/dist "$IMAGE" bash -c '
+        set -e
+        OUT=/dist/Roms/PORTS/Games/'"$APP_NAME"'/midiconv
+        arm-linux-gnueabihf-gcc -O2 -marm -mtune=cortex-a7 -mfpu=neon-vfpv4 \
+            -mfloat-abi=hard -march=armv7ve \
+            -o "$OUT" /src/tools/midiconv.c \
+            $(pkg-config --cflags sdl2) $(pkg-config --libs sdl2) -lfluidsynth -lm \
+            -Wl,--allow-shlib-undefined -Wl,-rpath,"\$ORIGIN/lib"
+        arm-linux-gnueabihf-strip -s "$OUT"
+    '
+fi
 
 ##############################################################################
 # 2. Bibliotecas: SDL2 do Miyoo + EGL/GLES virtuais (guardados na imagem em
@@ -175,20 +196,6 @@ fi
 ##############################################################################
 # 4. Arquivos do jogo (opcional: voce tambem pode copiar direto pro cartao SD)
 ##############################################################################
-if [ "$RELEASE" = 0 ] && [ -n "$GAME_SRC" ] && [ -d "$GAME_SRC" ]; then
-    # Jogos com musica MIDI (trazem um .sf2): grava as musicas em MP3 uma vez,
-    # porque sintetizar MIDI no Miyoo e pesado demais.
-    if [ -n "$(find "$GAME_SRC" -maxdepth 1 -iname '*.sf2' -print -quit)" ] && [ ! -d "$GAME_SRC/midi" ]; then
-        echo "==> Jogo com musica MIDI: gravando as musicas em MP3 (so na primeira vez)"
-        if ! python3 "$HERE/tools/prerender_midi.py" "$GAME_SRC"; then
-            echo "ERRO: falhou ao gravar as musicas. Instale: sudo apt install fluidsynth ffmpeg"
-            rm -rf "$GAME_SRC/midi"
-            exit 1
-        fi
-        chown -R "$OWNER" "$GAME_SRC/midi" 2>/dev/null || true
-    fi
-fi
-
 if [ "$RELEASE" = 1 ]; then
     echo "==> Release: sem os arquivos do jogo"
     cat > "$APP/game/PUT_GAME_FILES_HERE.txt" <<PLACEHOLDER_EOF
@@ -224,10 +231,27 @@ export LD_LIBRARY_PATH="$APPDIR/lib:/config/lib:/customer/lib:/mnt/SDCARD/miyoo/
 export SDL_VIDEODRIVER="Mini"
 export SDL_AUDIODRIVER="Miyoo Mini"
 
+# Mude para 1 para gravar no log/run.log os quadros por segundo do cursor.
+export MIYOO_FPS_LOG=0
+
 # Musica MIDI: usa o banco de sons (.sf2) que vier com o jogo.
 SF2=$(ls "$APPDIR"/game/*.sf2 "$APPDIR"/game/*.SF2 2>/dev/null | head -1)
 if [ -n "$SF2" ]; then
     export SDL_SOUNDFONTS="$SF2"
+fi
+
+# Musica MIDI: na primeira vez, converte as musicas para WAV (game/midi/),
+# com uma tela de progresso. Se for interrompido, continua da proxima vez.
+# Menu cancela e volta para o Onion (codigo 3).
+if [ -n "$SF2" ] && [ -x "$APPDIR/midiconv" ] && [ ! -f "$APPDIR/game/midi/.done" ]; then
+    echo "== midiconv @ $(date)" >> "$APPDIR/log/midiconv.log"
+    "$APPDIR/midiconv" "$APPDIR/game" 22050 >> "$APPDIR/log/midiconv.log" 2>&1
+    MRC=$?
+    echo "midiconv terminou com codigo $MRC" >> "$APPDIR/log/midiconv.log"
+    sync
+    if [ "$MRC" = 3 ]; then
+        exit 0
+    fi
 fi
 
 FONT_OPTS=""
@@ -325,29 +349,30 @@ if [ "$RELEASE" = 1 ]; then
     if [ "$IS_MIDI" = 1 ]; then
         mkdir -p "$APP/tools"
         cp "$HERE/tools/prerender_midi.py" "$APP/tools/"
-        echo "==> Release: tools/prerender_midi.py incluido (musica MIDI)"
-        MIDI_STEP="
-4. This game's music is MIDI, which is too heavy to synthesize on the
-   Miyoo. Convert it to MP3 once, on the PC:
+        echo "==> Release: tools/prerender_midi.py incluido (opcional, musica MIDI)"
+        MIDI_NOTE="
+MIDI MUSIC
+  This game's music is MIDI, which is too heavy to play on the Miyoo while
+  the game runs. The FIRST time you open the game, a screen converts the
+  music to WAV files (in game/midi/). It takes a few minutes and needs free
+  space on the SD card (Rance 1: about 5 min / 200 MB; Rance III: about
+  10 min / 420 MB). Press Menu to stop: it continues the next time you open
+  the game. After that the game starts directly.
 
-   Requirements: Linux, or Windows with WSL (Ubuntu), plus:
-       sudo apt install python3 fluidsynth ffmpeg
-
-   a. Move prerender_midi.py from
-          Roms/PORTS/Games/$APP_NAME/tools/
-      into the folder with the game's .ALD files:
-          Roms/PORTS/Games/$APP_NAME/game/
-   b. Open a WSL terminal in that game folder. On Windows: open the
-      folder in File Explorer, type  wsl  in the address bar, press Enter.
-   c. Run:
-          python3 prerender_midi.py
-
-   It creates a \"midi\" folder there, with one MP3 per track.
+  Optional, faster and smaller: convert the music to MP3 on a PC instead.
+  Requirements: Linux, or Windows with WSL (Ubuntu), plus:
+      sudo apt install python3 fluidsynth ffmpeg
+  a. Move prerender_midi.py from  Roms/PORTS/Games/$APP_NAME/tools/
+     into the folder with the game's .ALD files:
+         Roms/PORTS/Games/$APP_NAME/game/
+  b. Open a WSL terminal in that folder (in File Explorer, type  wsl  in
+     the address bar and press Enter).
+  c. Run:  python3 prerender_midi.py
+  It creates a \"midi\" folder with one MP3 per track; the Miyoo then
+  skips the conversion.
 "
-        NEXT=5
     else
-        MIDI_STEP=""
-        NEXT=4
+        MIDI_NOTE=""
     fi
     cat > "$APP/INSTALL.txt" <<RELEASE_EOF
 $GAME_TITLE for Miyoo Mini / Miyoo Mini Plus (OnionOS)
@@ -364,13 +389,13 @@ https://haniwa.technology/games/ (the English .tar.gz build).
 3. Copy everything from the game folder (the .ALD files and the rest)
    into the zip's folder:
        Roms/PORTS/Games/$APP_NAME/game/
-\${MIDI_STEP}
-\${NEXT}. Copy the Roms folder to the ROOT of the SD card (it merges with
+
+4. Copy the Roms folder to the ROOT of the SD card (it merges with
    the Roms folder already there).
 
-$((NEXT+1)). In OnionOS, open Ports and run "~Import ports". The game shows up
+5. In OnionOS, open Ports and run "~Import ports". The game shows up
    once its files are in place.
-
+\${MIDI_NOTE}
 CONTROLS
   D-pad ............ move the cursor (hold to accelerate)
   R1 (hold) ........ fast cursor
@@ -385,10 +410,10 @@ If the game does not start, check:
        Roms/PORTS/Games/$APP_NAME/log/run.log
 RELEASE_EOF
     # As variaveis do texto acima foram escritas literalmente; trocar agora.
-    python3 - "$APP/INSTALL.txt" "$MIDI_STEP" "$NEXT" <<'PYEOF'
+    python3 - "$APP/INSTALL.txt" "$MIDI_NOTE" <<'PYEOF'
 import sys
-path, midi, nxt = sys.argv[1], sys.argv[2], sys.argv[3]
-t = open(path).read().replace("${MIDI_STEP}", midi).replace("${NEXT}", nxt)
+path, midi = sys.argv[1], sys.argv[2]
+t = open(path).read().replace("${MIDI_NOTE}", midi)
 open(path, "w").write(t)
 PYEOF
 else
