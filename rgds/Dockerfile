@@ -57,6 +57,8 @@ RUN git clone --depth 1 --branch v2.5.7 https://github.com/FluidSynth/fluidsynth
 # nao toca MIDI. Vai no port como libs/libSDL2_mixer-2.0.so.0 e toca a musica
 # MIDI em tempo real (o RK3566 aguenta), sem converter nada.
 # MP3 (minimp3), OGG (stb_vorbis) e WAV embutidos; o resto desligado.
+# FluidSynth_DIR aponta para o NOSSO FluidSynth: o libsdl2-mixer-dev do Debian
+# traz o dele (arm64) e o CMake pegava aquele.
 RUN git clone --depth 1 --branch release-2.8.1 https://github.com/libsdl-org/SDL_mixer /tmp/mixer && \
     cd /tmp/mixer && \
     cmake -S . -B build \
@@ -70,6 +72,7 @@ RUN git clone --depth 1 --branch release-2.8.1 https://github.com/libsdl-org/SDL
         -DSDL2MIXER_DEPS_SHARED=OFF \
         -DSDL2MIXER_MIDI=ON -DSDL2MIXER_MIDI_FLUIDSYNTH=ON \
         -DSDL2MIXER_MIDI_TIMIDITY=OFF -DSDL2MIXER_MIDI_NATIVE=OFF \
+        -DFluidSynth_DIR=/opt/fluid/lib/cmake/fluidsynth \
         -DFluidSynth_LIBRARY=/opt/fluid/lib/libfluidsynth.so \
         -DFluidSynth_INCLUDE_PATH=/opt/fluid/include \
         -DSDL2MIXER_MP3=ON -DSDL2MIXER_MP3_MINIMP3=ON -DSDL2MIXER_MP3_MPG123=OFF \
@@ -78,6 +81,7 @@ RUN git clone --depth 1 --branch release-2.8.1 https://github.com/libsdl-org/SDL
         -DSDL2MIXER_WAVPACK=OFF -DSDL2MIXER_GME=OFF && \
     cmake --build build -j"$(nproc)" && cmake --install build && \
     test -e /opt/mixer/lib/libSDL2_mixer-2.0.so.0 && \
+    aarch64-linux-gnu-readelf -d /opt/mixer/lib/libSDL2_mixer-2.0.so.0 | grep -q 'libfluidsynth.so.3' && \
     rm -rf /tmp/mixer
 
 WORKDIR /src
