@@ -405,6 +405,11 @@ static int axis_val[MAX_AXES], axis_min[MAX_AXES], axis_max[MAX_AXES];
 static int logged_min[MAX_AXES], logged_max[MAX_AXES];
 static int stick_x = 0, stick_y = 1;
 static bool stick_ready;
+static SDL_Joystick *stick_js;
+static int axis_center[MAX_AXES], num_axes;
+/* Log do analogico (RGDS_STICK_LOG=0 desliga): ate 400 linhas no run.log. */
+static int stick_log_left = 400;
+static Uint32 stick_log_last;
 
 static void rgds_stick_init(void) {
 	stick_ready = true;
@@ -413,20 +418,40 @@ static void rgds_stick_init(void) {
 		stick_x = atoi(v);
 	if ((v = getenv("RGDS_STICK_Y")) && *v)
 		stick_y = atoi(v);
+	if ((v = getenv("RGDS_STICK_LOG")) && *v == '0')
+		stick_log_left = 0;
 	SDL_InitSubSystem(SDL_INIT_JOYSTICK);
 	for (int i = 0; i < SDL_NumJoysticks(); i++) {
 		SDL_Joystick *j = SDL_JoystickOpen(i);
-		if (j)
-			fprintf(stderr, "[rgds] controle %d: %s, %d eixos, %d botoes\n", i,
-			        SDL_JoystickName(j), SDL_JoystickNumAxes(j), SDL_JoystickNumButtons(j));
+		if (!j)
+			continue;
+		fprintf(stderr, "[rgds] controle %d: %s, %d eixos, %d botoes\n", i,
+		        SDL_JoystickName(j), SDL_JoystickNumAxes(j), SDL_JoystickNumButtons(j));
+		if (!stick_js && SDL_JoystickNumAxes(j) >= 2)
+			stick_js = j;
 	}
 	SDL_JoystickEventState(SDL_ENABLE);
+	if (stick_js) {
+		/* Posicao de repouso de cada eixo (o analogico solto ao abrir o jogo). */
+		SDL_JoystickUpdate();
+		num_axes = SDL_JoystickNumAxes(stick_js);
+		if (num_axes > MAX_AXES)
+			num_axes = MAX_AXES;
+		fprintf(stderr, "[rgds] repouso:");
+		for (int a = 0; a < num_axes; a++) {
+			int c = SDL_JoystickGetAxis(stick_js, a);
+			axis_center[a] = (c > -8000 && c < 8000) ? c : 0;
+			fprintf(stderr, " eixo%d=%d", a, c);
+		}
+		fprintf(stderr, "\n");
+	}
 	fprintf(stderr, "[rgds] analogico: eixo X = %d, eixo Y = %d\n", stick_x, stick_y);
 }
 
 static void rgds_axis(int axis, int value) {
 	if (axis < 0 || axis >= MAX_AXES)
 		return;
+	value -= axis_center[axis];
 	axis_val[axis] = value;
 	if (value < axis_min[axis])
 		axis_min[axis] = value;
@@ -692,6 +717,12 @@ static void send_button(int button, bool down) {
 }
 
 void miyoo_set_cursor(int x, int y) {
+#ifdef RGDS
+	if (stick_log_left > 0) {
+		stick_log_left--;
+		fprintf(stderr, "[rgds] o jogo moveu o cursor: %.0f,%.0f -> %d,%d\n", cur_x, cur_y, x, y);
+	}
+#endif
 	cur_x = x;
 	cur_y = y;
 	gfx_requestRedraw();
@@ -788,6 +819,10 @@ void miyoo_update(void) {
 #ifdef RGDS
 	if (!stick_ready)
 		rgds_stick_init();
+	/* Le o estado atual dos eixos direto (alem dos eventos). */
+	if (stick_js)
+		for (int a = 0; a < num_axes; a++)
+			rgds_axis(a, SDL_JoystickGetAxis(stick_js, a));
 #endif
 	if (l1_held || in_update)
 		return;
@@ -807,6 +842,15 @@ void miyoo_update(void) {
 			cur_x += sx / mag * speed * dt;
 			cur_y += sy / mag * speed * dt;
 			move_since = 0;
+			if (stick_log_left > 0 && now - stick_log_last >= 150) {
+				stick_log_last = now;
+				stick_log_left--;
+				fprintf(stderr, "[rgds] analogico:");
+				for (int a = 0; a < num_axes; a++)
+					fprintf(stderr, " e%d=%d", a, axis_val[a]);
+				fprintf(stderr, " | x=%.2f y=%.2f vel=%.0f | cursor %.0f,%.0f\n",
+				        sx, sy, speed, cur_x, cur_y);
+			}
 			goto moved;
 		}
 	}
@@ -816,6 +860,13 @@ void miyoo_update(void) {
 		return;
 	}
 	ensure_position();
+#ifdef RGDS
+	if (stick_log_left > 0 && now - stick_log_last >= 150) {
+		stick_log_last = now;
+		stick_log_left--;
+		fprintf(stderr, "[rgds] setas: dx=%d dy=%d | cursor %.0f,%.0f\n", dx, dy, cur_x, cur_y);
+	}
+#endif
 
 	if (!move_since) {
 		move_since = now;
