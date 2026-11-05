@@ -829,9 +829,12 @@ void miyoo_update(void) {
 	int dx = dpad[DIR_RIGHT] - dpad[DIR_LEFT];
 	int dy = dpad[DIR_DOWN] - dpad[DIR_UP];
 #ifdef RGDS
-	if (!dx && !dy) {
+	{
 		/* Analogico: velocidade proporcional a inclinacao, em qualquer
-		   direcao (zona morta de 20% no centro). */
+		   direcao (zona morta de 20% no centro). Tem prioridade sobre as
+		   setas: no RG DS Plus os eixos 2 e 3 copiam o movimento lateral
+		   do analogico, e um gptokeyb que os transforme em setas mandaria
+		   o cursor para o lado contrario. */
 		float sx = stick_norm(stick_x), sy = stick_norm(stick_y);
 		float mag = sqrtf(sx * sx + sy * sy);
 		const float dz = 0.2f;
