@@ -38,6 +38,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef RGDS
+#include <math.h>
+#endif
 #include "sdl_compat.h"
 
 #include "portab.h"
@@ -392,6 +395,64 @@ enum { DIR_UP, DIR_DOWN, DIR_LEFT, DIR_RIGHT };
 static bool dpad[4];
 static bool l1_held, r1_held;
 
+#ifdef RGDS
+/* Analogico do RG DS lido direto pelo SDL (pelo gptokeyb ele virava setas e
+   andava torto). Eixos 0 = X e 1 = Y; outros com RGDS_STICK_X / RGDS_STICK_Y.
+   O alcance de cada eixo e aprendido enquanto se joga: um analogico que nao
+   chega a +-32767 de um lado ainda alcanca a velocidade maxima. */
+#define MAX_AXES 8
+static int axis_val[MAX_AXES], axis_min[MAX_AXES], axis_max[MAX_AXES];
+static int logged_min[MAX_AXES], logged_max[MAX_AXES];
+static int stick_x = 0, stick_y = 1;
+static bool stick_ready;
+
+static void rgds_stick_init(void) {
+	stick_ready = true;
+	const char *v;
+	if ((v = getenv("RGDS_STICK_X")) && *v)
+		stick_x = atoi(v);
+	if ((v = getenv("RGDS_STICK_Y")) && *v)
+		stick_y = atoi(v);
+	SDL_InitSubSystem(SDL_INIT_JOYSTICK);
+	for (int i = 0; i < SDL_NumJoysticks(); i++) {
+		SDL_Joystick *j = SDL_JoystickOpen(i);
+		if (j)
+			fprintf(stderr, "[rgds] controle %d: %s, %d eixos, %d botoes\n", i,
+			        SDL_JoystickName(j), SDL_JoystickNumAxes(j), SDL_JoystickNumButtons(j));
+	}
+	SDL_JoystickEventState(SDL_ENABLE);
+	fprintf(stderr, "[rgds] analogico: eixo X = %d, eixo Y = %d\n", stick_x, stick_y);
+}
+
+static void rgds_axis(int axis, int value) {
+	if (axis < 0 || axis >= MAX_AXES)
+		return;
+	axis_val[axis] = value;
+	if (value < axis_min[axis])
+		axis_min[axis] = value;
+	if (value > axis_max[axis])
+		axis_max[axis] = value;
+	/* No log: o alcance de cada eixo, quando cresce bastante. */
+	if (axis_min[axis] < logged_min[axis] - 4000 || axis_max[axis] > logged_max[axis] + 4000) {
+		logged_min[axis] = axis_min[axis];
+		logged_max[axis] = axis_max[axis];
+		fprintf(stderr, "[rgds] eixo %d: %d a %d\n", axis, axis_min[axis], axis_max[axis]);
+	}
+}
+
+/* -1..1, usando o alcance aprendido (no minimo 12000 para cada lado). */
+static float stick_norm(int axis) {
+	if (axis < 0 || axis >= MAX_AXES)
+		return 0;
+	int v = axis_val[axis];
+	int range = v >= 0 ? axis_max[axis] : -axis_min[axis];
+	if (range < 12000)
+		range = 12000;
+	float f = (float)v / range;
+	return f > 1 ? 1 : f < -1 ? -1 : f;
+}
+#endif
+
 /* ---------------------------------------------------------------------- */
 /* Dialogo de saida ("Do you want to leave?")                              */
 /* ---------------------------------------------------------------------- */
@@ -642,8 +703,10 @@ bool miyoo_handle_event(SDL_Event *e) {
 	   chegam como teclas (gptokeyb), entao o joystick e ignorado para nada
 	   acontecer em dobro. */
 	switch (e->type) {
-	case SDL_EVENT_JOYSTICK_ADDED:
 	case SDL_EVENT_JOYSTICK_AXIS_MOTION:
+		rgds_axis(e->jaxis.axis, e->jaxis.value);
+		return true;
+	case SDL_EVENT_JOYSTICK_ADDED:
 	case SDL_EVENT_JOYSTICK_BALL_MOTION:
 	case SDL_EVENT_JOYSTICK_HAT_MOTION:
 	case SDL_EVENT_JOYSTICK_BUTTON_DOWN:
@@ -722,10 +785,32 @@ void miyoo_update(void) {
 		last_tick = now;
 	}
 
+#ifdef RGDS
+	if (!stick_ready)
+		rgds_stick_init();
+#endif
 	if (l1_held || in_update)
 		return;
 	int dx = dpad[DIR_RIGHT] - dpad[DIR_LEFT];
 	int dy = dpad[DIR_DOWN] - dpad[DIR_UP];
+#ifdef RGDS
+	if (!dx && !dy) {
+		/* Analogico: velocidade proporcional a inclinacao, em qualquer
+		   direcao (zona morta de 20% no centro). */
+		float sx = stick_norm(stick_x), sy = stick_norm(stick_y);
+		float mag = sqrtf(sx * sx + sy * sy);
+		const float dz = 0.2f;
+		if (mag > dz) {
+			float k = ((mag > 1 ? 1 : mag) - dz) / (1 - dz);
+			float speed = r1_held ? 900.0f : 60.0f + 640.0f * k * k;
+			ensure_position();
+			cur_x += sx / mag * speed * dt;
+			cur_y += sy / mag * speed * dt;
+			move_since = 0;
+			goto moved;
+		}
+	}
+#endif
 	if (!dx && !dy) {
 		move_since = 0;
 		return;
@@ -751,6 +836,9 @@ void miyoo_update(void) {
 		cur_y += dy * speed * dt;
 	}
 
+#ifdef RGDS
+moved:;
+#endif
 	int w = 640, h = 480;
 	gfx_getViewSize(&w, &h);
 	if (cur_x < 0) cur_x = 0;
