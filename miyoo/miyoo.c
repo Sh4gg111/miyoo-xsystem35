@@ -407,8 +407,8 @@ static int stick_x = 0, stick_y = 1;
 static bool stick_ready;
 static SDL_Joystick *stick_js;
 static int axis_center[MAX_AXES], num_axes;
-/* Log do analogico (RGDS_STICK_LOG=0 desliga): ate 400 linhas no run.log. */
-static int stick_log_left = 400;
+/* Log do analogico (RGDS_STICK_LOG=1 liga): ate 400 linhas no run.log. */
+static int stick_log_left;
 static Uint32 stick_log_last;
 
 static void rgds_stick_init(void) {
@@ -418,8 +418,8 @@ static void rgds_stick_init(void) {
 		stick_x = atoi(v);
 	if ((v = getenv("RGDS_STICK_Y")) && *v)
 		stick_y = atoi(v);
-	if ((v = getenv("RGDS_STICK_LOG")) && *v == '0')
-		stick_log_left = 0;
+	if ((v = getenv("RGDS_STICK_LOG")) && *v == '1')
+		stick_log_left = 400;
 	SDL_InitSubSystem(SDL_INIT_JOYSTICK);
 	for (int i = 0; i < SDL_NumJoysticks(); i++) {
 		SDL_Joystick *j = SDL_JoystickOpen(i);

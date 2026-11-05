@@ -148,6 +148,8 @@ export SDL_GAMECONTROLLERCONFIG="$sdl_controllerconfig"
 export SDL_RENDER_SCALE_QUALITY=1
 # Mude para 1 para gravar no log/run.log os quadros por segundo do cursor.
 export MIYOO_FPS_LOG=0
+# Mude para 1 para gravar no log/run.log o movimento do analogico.
+export RGDS_STICK_LOG=0
 
 # Som: no BananaOS nao ha servidor de som, o SDL vai direto no ALSA.
 if [ "${CFW_NAME:-}" = "BananaOS" ]; then
