@@ -20,6 +20,11 @@
  *   Select ........... liga/desliga o pulo de mensagens (como F1)
  *   Menu ............. pergunta se quer sair do jogo
  *
+ * RG DS / RG DS Plus (BananaOS, ROCKNIX): compilado com -DRGDS tambem. O
+ * controle vira teclas pelo gptokeyb do PortMaster (ver rgds/xsystem35.gptk)
+ * com as mesmas teclas do Miyoo; A, B e Select tambem aceitam Z, X e S,
+ * nomes de tecla que o gptokeyb com certeza conhece.
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -538,6 +543,9 @@ static bool run_quit_dialog(void) {
 			/* Age ao soltar o botao, para o "soltar" nao vazar para o jogo.
 			   O soltar do Menu que abriu o dialogo e ignorado. */
 			case SDLK_SPACE:  /* A */
+#ifdef RGDS
+			case SDLK_z:
+#endif
 				if (down)
 					pressed_a = true;
 				else if (pressed_a) {
@@ -546,6 +554,9 @@ static bool run_quit_dialog(void) {
 				}
 				break;
 			case SDLK_LCTRL:  /* B */
+#ifdef RGDS
+			case SDLK_x:
+#endif
 				if (down)
 					pressed_b = true;
 				else if (pressed_b)
@@ -626,6 +637,22 @@ void miyoo_set_cursor(int x, int y) {
 }
 
 bool miyoo_handle_event(SDL_Event *e) {
+#ifdef RGDS
+	/* O xsystem35 tambem le o controle como joystick. Aqui os botoes ja
+	   chegam como teclas (gptokeyb), entao o joystick e ignorado para nada
+	   acontecer em dobro. */
+	switch (e->type) {
+	case SDL_EVENT_JOYSTICK_ADDED:
+	case SDL_EVENT_JOYSTICK_AXIS_MOTION:
+	case SDL_EVENT_JOYSTICK_BALL_MOTION:
+	case SDL_EVENT_JOYSTICK_HAT_MOTION:
+	case SDL_EVENT_JOYSTICK_BUTTON_DOWN:
+	case SDL_EVENT_JOYSTICK_BUTTON_UP:
+		return true;
+	default:
+		break;
+	}
+#endif
 	if (e->type != SDL_EVENT_KEY_DOWN && e->type != SDL_EVENT_KEY_UP)
 		return false;
 	bool down = e->type == SDL_EVENT_KEY_DOWN;
@@ -638,9 +665,15 @@ bool miyoo_handle_event(SDL_Event *e) {
 	case SDLK_RIGHT: dir = DIR_RIGHT; break;
 
 	case SDLK_SPACE:   /* A */
+#ifdef RGDS
+	case SDLK_z:
+#endif
 		send_button(SDL_BUTTON_LEFT, down);
 		return true;
 	case SDLK_LCTRL:   /* B */
+#ifdef RGDS
+	case SDLK_x:
+#endif
 		send_button(SDL_BUTTON_RIGHT, down);
 		return true;
 	case SDLK_e:       /* L1 */
@@ -650,6 +683,9 @@ bool miyoo_handle_event(SDL_Event *e) {
 		r1_held = down;
 		return true;
 	case SDLK_RCTRL:   /* Select */
+#ifdef RGDS
+	case SDLK_s:
+#endif
 		if (!down)
 			msgskip_activate(!msgskip_isActivated());
 		return true;
