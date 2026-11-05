@@ -6,7 +6,8 @@ Uso: python3 apply_patch.py ~/xsystem35-sdl2
 - copia miyoo.c e miyoo.h para src/
 - adiciona miyoo.c na lista de fontes do CMake
 - insere ganchos (todos dentro de #ifdef MIYOO_MINI) em event.c,
-  gfx_draw.c, gfx_video.c, effect.c, midi.sdlmixer.c e system.c
+  gfx_draw.c, gfx_video.c, effect.c, midi.sdlmixer.c, mixer.sdl2mixer.c
+  (so para o RG DS) e system.c
 
 Pode ser rodado varias vezes: o que ja foi aplicado e pulado.
 """
@@ -51,7 +52,8 @@ def main():
     # nova deste patch substitua a anterior.
     import subprocess
     files = ["src/event.c", "src/gfx_draw.c", "src/gfx_video.c", "src/effect.c",
-             "src/midi.sdlmixer.c", "src/system.c", "src/CMakeLists.txt"]
+             "src/midi.sdlmixer.c", "src/mixer.sdl2mixer.c", "src/system.c",
+             "src/CMakeLists.txt"]
     r = subprocess.run(["git", "-C", str(root), "checkout", "--"] + files,
                        capture_output=True, text=True)
     if r.returncode == 0:
@@ -187,7 +189,7 @@ def main():
     patch(srcdir / "midi.sdlmixer.c", [
         ('#include "mixer.h"\n',
          '#include "mixer.h"\n'
-         '#ifdef MIYOO_MINI\n'
+         '#if defined(MIYOO_MINI) && !defined(RGDS)\n'
          '#include <stdio.h>\n'
          '#include <sys/stat.h>\n'
          '/* Procura midi/<no>.wav, .mp3 ou .ogg na pasta do jogo. */\n'
@@ -205,7 +207,7 @@ def main():
         ("static bool midi_initialize(int subdev) {\n"
          "\treturn mixer_init_midi();\n",
          "static bool midi_initialize(int subdev) {\n"
-         "#ifdef MIYOO_MINI\n"
+         "#if defined(MIYOO_MINI) && !defined(RGDS)\n"
          "\t{\n"
          "\t\tstruct stat st;\n"
          "\t\tif (stat(\"midi\", &st) == 0 && S_ISDIR(st.st_mode)) {\n"
@@ -216,13 +218,42 @@ def main():
          "#endif\n"
          "\treturn mixer_init_midi();\n"),
         ("\tmusic = mixer_music_load_midi(data, datalen);\n",
-         "#ifdef MIYOO_MINI\n"
+         "#if defined(MIYOO_MINI) && !defined(RGDS)\n"
          "\tchar path[64];\n"
          "\tif (miyoo_prerendered(no, path, sizeof(path)))\n"
          "\t\tmusic = mixer_music_load_file(path);\n"
          "\telse\n"
          "#endif\n"
          "\tmusic = mixer_music_load_midi(data, datalen);\n"),
+    ])
+    # mixer.sdl2mixer.c (so no RG DS): se o som nao abrir, escrever o motivo
+    # no log, e dizer qual saida de som e qual banco MIDI foram usados.
+    patch(srcdir / "mixer.sdl2mixer.c", [
+        ('#include "mixer.h"\n',
+         '#include "mixer.h"\n'
+         '#if defined(MIYOO_MINI) && defined(RGDS)\n#include <stdio.h>\n#endif\n'),
+        ("\tif (Mix_OpenAudioDevice(SAMPLE_RATE, AUDIO_S16LSB, 2, buffer_size, NULL, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE) < 0)\n"
+         "\t\treturn false;\n",
+         "\tif (Mix_OpenAudioDevice(SAMPLE_RATE, AUDIO_S16LSB, 2, buffer_size, NULL, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE) < 0) {\n"
+         "#if defined(MIYOO_MINI) && defined(RGDS)\n"
+         "\t\tfprintf(stderr, \"[rgds] som: nao abriu (%s), driver %s\\n\", SDL_GetError(),\n"
+         "\t\t        SDL_GetCurrentAudioDriver() ? SDL_GetCurrentAudioDriver() : \"nenhum\");\n"
+         "#endif\n"
+         "\t\treturn false;\n"
+         "\t}\n"
+         "#if defined(MIYOO_MINI) && defined(RGDS)\n"
+         "\tfprintf(stderr, \"[rgds] som: ok, driver %s\\n\", SDL_GetCurrentAudioDriver());\n"
+         "#endif\n"),
+        ("\treturn Mix_Init(MIX_INIT_MID) == MIX_INIT_MID;\n",
+         "#if defined(MIYOO_MINI) && defined(RGDS)\n"
+         "\t{\n"
+         "\t\tbool ok = (Mix_Init(MIX_INIT_MID) & MIX_INIT_MID) != 0;\n"
+         "\t\tfprintf(stderr, \"[rgds] MIDI (FluidSynth): %s, banco %s\\n\", ok ? \"ok\" : SDL_GetError(),\n"
+         "\t\t        Mix_GetSoundFonts() ? Mix_GetSoundFonts() : \"nenhum\");\n"
+         "\t\treturn ok;\n"
+         "\t}\n"
+         "#endif\n"
+         "\treturn Mix_Init(MIX_INIT_MID) == MIX_INIT_MID;\n"),
     ])
     # system.c: ritmo de quadros constante (~60/s). O original dorme 16 ms
     # DEPOIS de desenhar; no Miyoo o desenho leva varios ms, entao os quadros

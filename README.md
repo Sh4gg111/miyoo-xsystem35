@@ -172,9 +172,9 @@ If a game does not start, check
 
 ## RG DS / RG DS Plus (BananaOS, ROCKNIX)
 
-The same patch also builds for the **Anbernic RG DS and RG DS Plus** (aarch64), packaged as a [PortMaster](https://portmaster.games/) port. It runs on **BananaOS** and **ROCKNIX**, which both ship PortMaster, SDL2, SDL2_mixer and FreeType; the port uses the system libraries (only `libfluidsynth` is bundled, for MIDI games). The game draws on one screen (the top one on BananaOS), stretched from 640×480 to the full panel.
+The same patch also builds for the **Anbernic RG DS and RG DS Plus** (aarch64), packaged as a [PortMaster](https://portmaster.games/) port. It runs on **BananaOS** and **ROCKNIX**, which both ship PortMaster, SDL2 and FreeType; the port bundles its own SDL2_mixer with FluidSynth, so MIDI music plays live (with loop points) instead of being pre-rendered. The game draws on one screen (the top one on BananaOS), stretched from 640×480 to the full panel.
 
-Everything lives in `rgds/`. The build compiles with `-DMIYOO_MINI -DRGDS`: the Miyoo mode (virtual mouse, software cursor, quit dialog, pre-rendered MIDI, frame pacing) plus a few RG DS changes (the pad reaches the game as keys through PortMaster's `gptokeyb`, so SDL's joystick events are ignored).
+Everything lives in `rgds/`. The build compiles with `-DMIYOO_MINI -DRGDS`: the Miyoo mode (virtual mouse, software cursor, quit dialog, frame pacing) plus a few RG DS changes: the pad reaches the game as keys through PortMaster's `gptokeyb`, so SDL's joystick events are ignored; MIDI is played live instead of from `game/midi/`; audio problems are written to the log.
 
 ```bash
 sudo ./rgds/build-rgds.sh ~/xsystem35-sdl2
@@ -184,8 +184,6 @@ sudo ./rgds/package-rgds.sh --release ~/xsystem35-sdl2 ~/Rance1 Rance1 "Rance 1"
 ```
 
 The result is in `dist/rgds/<Name>/ports/`: copy its contents (`<Name>.sh` and the `<name>/` folder) into `roms/ports` on the SD card and start the game from Ports. Controls are the same as on the Miyoo, with the left stick also moving the cursor, **X** (or the Menu/Function key) opening the quit dialog and **Select + Start** force-quitting. Button mapping is in `ports/<name>/xsystem35.gptk`. Logs: `ports/<name>/log/run.log`.
-
-MIDI games convert their music on the first launch exactly as on the Miyoo (`midiconv`), or use `prerender_midi.py` on a PC.
 
 ## Known limitations
 

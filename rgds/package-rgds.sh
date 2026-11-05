@@ -13,8 +13,8 @@
 #
 # Resultado em dist/rgds/<NomeDaPasta>/ports/ :
 #   <NomeDaPasta>.sh          o que aparece em Ports
-#   <nomedapasta>/            xsystem35, xsystem35.gptk, libs/, game/, save/, log/
-#                             (+ midiconv e libs/libfluidsynth.so.3 se o jogo for MIDI)
+#   <nomedapasta>/            xsystem35, xsystem35.gptk, game/, save/, log/,
+#                             libs/ (SDL2_mixer com MIDI + FluidSynth)
 # Copie o CONTEUDO dessa pasta "ports" para a pasta roms/ports do cartao.
 set -euo pipefail
 
@@ -73,7 +73,7 @@ mkdir -p "$APP/libs" "$APP/fonts" "$APP/game" "$APP/save" "$APP/log"
 chown -R "$OWNER" "$DIST" 2>/dev/null || true
 
 ##############################################################################
-# 1. Binario, controles e (para jogos MIDI) o midiconv
+# 1. Binario, controles e bibliotecas de som
 ##############################################################################
 echo "==> Binario"
 cp "$BIN" "$APP/xsystem35"
@@ -83,22 +83,17 @@ chown -R "$OWNER" "$APP" 2>/dev/null || true
 docker run --rm --user "$OWNER" -v "$DIST":/dist "$IMAGE" \
     aarch64-linux-gnu-strip -s "/dist/ports/$DIR_NAME/xsystem35"
 
-if [ "$IS_MIDI" = 1 ]; then
-    echo "==> Conversor de musica MIDI (midiconv + libfluidsynth)"
-    docker run --rm --user "$OWNER" -v "$REPO":/repo:ro -v "$DIST":/dist "$IMAGE" bash -c '
-        set -e
-        OUT=/dist/ports/'"$DIR_NAME"'
-        aarch64-linux-gnu-gcc -O2 -mcpu=cortex-a55 -o "$OUT/midiconv" /repo/tools/midiconv.c \
-            -I/opt/fluid/include $(pkg-config --cflags sdl2) \
-            -L/opt/fluid/lib -lfluidsynth $(pkg-config --libs sdl2) -lm \
-            -Wl,-rpath,"\$ORIGIN/libs"
-        aarch64-linux-gnu-strip -s "$OUT/midiconv"
-        cp -L /opt/fluid/lib/libfluidsynth.so.3 "$OUT/libs/"
-        aarch64-linux-gnu-strip --strip-unneeded "$OUT/libs/libfluidsynth.so.3"
-        echo "  libfluidsynth pede:"
-        aarch64-linux-gnu-readelf -d "$OUT/libs/libfluidsynth.so.3" | sed -n "s/.*Shared library: \[\(.*\)\]/    \1/p"
-    '
-fi
+echo "==> Bibliotecas: SDL2_mixer com MIDI (FluidSynth)"
+docker run --rm --user "$OWNER" -v "$DIST":/dist "$IMAGE" bash -c '
+    set -e
+    OUT=/dist/ports/'"$DIR_NAME"'/libs
+    cp -L /opt/mixer/lib/libSDL2_mixer-2.0.so.0 /opt/fluid/lib/libfluidsynth.so.3 "$OUT/"
+    for f in "$OUT"/*.so.*; do
+        aarch64-linux-gnu-strip --strip-unneeded "$f"
+        echo "  $(basename "$f") pede:"
+        aarch64-linux-gnu-readelf -d "$f" | sed -n "s/.*Shared library: \[\(.*\)\]/    \1/p"
+    done
+'
 
 ##############################################################################
 # 2. Fonte e jogo
@@ -154,29 +149,23 @@ export SDL_RENDER_SCALE_QUALITY=1
 # Mude para 1 para gravar no log/run.log os quadros por segundo do cursor.
 export MIYOO_FPS_LOG=0
 
+# Som: no BananaOS nao ha servidor de som, o SDL vai direto no ALSA.
+if [ "${CFW_NAME:-}" = "BananaOS" ]; then
+    export SDL_AUDIODRIVER=alsa
+fi
+# Musica MIDI tocada na hora pelo FluidSynth, com o banco de sons do jogo.
+SF2=$(ls "$GAMEDIR"/game/*.sf2 "$GAMEDIR"/game/*.SF2 2>/dev/null | head -1)
+[ -n "$SF2" ] && export SDL_SOUNDFONTS="$SF2"
+
 echo "== __TITLE__ @ $(date)"
 echo "CFW: ${CFW_NAME:-?}  aparelho: ${DEVICE_NAME:-?}  tela: ${DISPLAY_WIDTH:-?}x${DISPLAY_HEIGHT:-?}"
+echo "som: SDL_AUDIODRIVER=${SDL_AUDIODRIVER:-(padrao)}  banco MIDI: ${SDL_SOUNDFONTS:-nenhum}"
+echo "placas de som:"; cat /proc/asound/cards 2>&1
 echo "arquivos do jogo:"; ls "$GAMEDIR/game" | head -20; echo "----"
 
 # Botoes -> teclas (as mesmas do Miyoo). Select+Start fecha o jogo na marra.
 $GPTOKEYB "xsystem35" -c "$GAMEDIR/xsystem35.gptk" &
 pm_platform_helper "$GAMEDIR/xsystem35" > /dev/null 2>&1
-
-# Musica MIDI: o SDL2_mixer do aparelho nao toca MIDI, entao na primeira vez
-# as musicas sao convertidas para WAV (game/midi/). Menu/X cancela; continua
-# da proxima vez.
-SF2=$(ls "$GAMEDIR"/game/*.sf2 "$GAMEDIR"/game/*.SF2 2>/dev/null | head -1)
-if [ -n "$SF2" ] && [ -x "$GAMEDIR/midiconv" ] && [ ! -f "$GAMEDIR/game/midi/.done" ]; then
-    echo "== midiconv"
-    "$GAMEDIR/midiconv" "$GAMEDIR/game" 22050 >> "$GAMEDIR/log/midiconv.log" 2>&1
-    MRC=$?
-    echo "midiconv terminou com codigo $MRC"
-    sync
-    if [ "$MRC" = 3 ]; then
-        pm_finish
-        exit 0
-    fi
-fi
 
 FONT_OPTS=""
 if [ -f "$GAMEDIR/fonts/font.ttf" ]; then
@@ -195,15 +184,11 @@ chmod 755 "$PORTS/$APP_NAME.sh"
 # 4. Instrucoes
 ##############################################################################
 if [ "$IS_MIDI" = 1 ]; then
-    mkdir -p "$APP/tools"
-    cp "$REPO/tools/prerender_midi.py" "$APP/tools/"
     MIDI_NOTE="
 MIDI MUSIC
-  This game's music is MIDI. The FIRST time you open it, a screen converts
-  the music to WAV files (in game/midi/), using the game's own sound bank.
-  Press X (or the Menu/Function key) to stop; it continues next time.
-  Faster and smaller: run tools/prerender_midi.py on a PC first (see the
-  README in $REPO_URL); the handheld then skips the conversion.
+  This game's music is MIDI. It is played live with FluidSynth and the
+  game's own sound bank (no conversion needed). If you copied the game from
+  the Miyoo port, its game/midi folder is not used here and can be deleted.
 "
 else
     MIDI_NOTE=""

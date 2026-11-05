@@ -53,4 +53,31 @@ RUN git clone --depth 1 --branch v2.5.7 https://github.com/FluidSynth/fluidsynth
     test -e /opt/fluid/lib/libfluidsynth.so.3 && \
     rm -rf /tmp/fluidsynth
 
+# SDL2_mixer proprio, com MIDI pelo FluidSynth acima: o SDL2_mixer do BananaOS
+# nao toca MIDI. Vai no port como libs/libSDL2_mixer-2.0.so.0 e toca a musica
+# MIDI em tempo real (o RK3566 aguenta), sem converter nada.
+# MP3 (minimp3), OGG (stb_vorbis) e WAV embutidos; o resto desligado.
+RUN git clone --depth 1 --branch release-2.8.1 https://github.com/libsdl-org/SDL_mixer /tmp/mixer && \
+    cd /tmp/mixer && \
+    cmake -S . -B build \
+        -DCMAKE_TOOLCHAIN_FILE=/tmp/aarch64.cmake \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/opt/mixer \
+        -DCMAKE_INSTALL_LIBDIR=lib \
+        -DCMAKE_C_FLAGS="-mcpu=cortex-a55 -O2" \
+        -DBUILD_SHARED_LIBS=ON \
+        -DSDL2MIXER_VENDORED=OFF -DSDL2MIXER_SAMPLES=OFF \
+        -DSDL2MIXER_DEPS_SHARED=OFF \
+        -DSDL2MIXER_MIDI=ON -DSDL2MIXER_MIDI_FLUIDSYNTH=ON \
+        -DSDL2MIXER_MIDI_TIMIDITY=OFF -DSDL2MIXER_MIDI_NATIVE=OFF \
+        -DFluidSynth_LIBRARY=/opt/fluid/lib/libfluidsynth.so \
+        -DFluidSynth_INCLUDE_PATH=/opt/fluid/include \
+        -DSDL2MIXER_MP3=ON -DSDL2MIXER_MP3_MINIMP3=ON -DSDL2MIXER_MP3_MPG123=OFF \
+        -DSDL2MIXER_VORBIS=STB -DSDL2MIXER_WAVE=ON \
+        -DSDL2MIXER_FLAC=OFF -DSDL2MIXER_MOD=OFF -DSDL2MIXER_OPUS=OFF \
+        -DSDL2MIXER_WAVPACK=OFF -DSDL2MIXER_GME=OFF && \
+    cmake --build build -j"$(nproc)" && cmake --install build && \
+    test -e /opt/mixer/lib/libSDL2_mixer-2.0.so.0 && \
+    rm -rf /tmp/mixer
+
 WORKDIR /src
