@@ -23,7 +23,7 @@ RUN dpkg --add-architecture arm64 && \
 # pkg-config e CMake procurando so as bibliotecas arm64.
 ENV PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
 
-# FluidSynth so para o midiconv (converte a musica MIDI uma vez, no aparelho).
+# FluidSynth para o SDL2_mixer abaixo tocar a musica MIDI na hora.
 # Sem GLib (osal=cpp11), como no build do Miyoo; vai como libs/libfluidsynth.so.3.
 ENV GIT_TERMINAL_PROMPT=0
 RUN git clone --depth 1 --branch v2.5.7 https://github.com/FluidSynth/fluidsynth /tmp/fluidsynth && \

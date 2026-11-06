@@ -108,6 +108,10 @@ if [ "$RELEASE" = 1 ]; then
 elif [ -n "$GAME_SRC" ] && [ -d "$GAME_SRC" ]; then
     echo "==> Copiando o jogo de $GAME_SRC (pode demorar)"
     cp -r "$GAME_SRC"/. "$APP/game/"
+    # Musica pre-gravada do port do Miyoo: aqui o MIDI toca na hora.
+    for m in "$APP"/game/midi "$APP"/game/MIDI; do
+        [ -d "$m" ] && rm -rf "$m" && echo "  (pasta midi/ do Miyoo ignorada)"
+    done
 fi
 
 ##############################################################################
@@ -189,8 +193,8 @@ if [ "$IS_MIDI" = 1 ]; then
     MIDI_NOTE="
 MIDI MUSIC
   This game's music is MIDI. It is played live with FluidSynth and the
-  game's own sound bank (no conversion needed). If you copied the game from
-  the Miyoo port, its game/midi folder is not used here and can be deleted.
+  game's own sound bank (no conversion needed). A game/midi folder from the
+  Miyoo port is not used here and can be deleted.
 "
 else
     MIDI_NOTE=""
@@ -218,8 +222,7 @@ CONTROLS
   B ................. right click (cancel / game menu)
   Start ............. Enter
   Select ............ toggle message skip
-  X (or Menu) ....... quit dialog (A confirms, B cancels)
-  Select + Start .... force quit
+  Select + Start .... quit (save first!)
   If A and B are swapped on your device, swap the "a" and "b" lines in
   ports/$DIR_NAME/xsystem35.gptk.
 

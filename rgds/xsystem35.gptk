@@ -1,9 +1,9 @@
 back = s
 start = enter
-guide = esc
+guide = \"
 a = z
 b = x
-x = esc
+x = \"
 y = \"
 l1 = e
 r1 = t

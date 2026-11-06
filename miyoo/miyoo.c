@@ -23,7 +23,8 @@
  * RG DS / RG DS Plus (BananaOS, ROCKNIX): compilado com -DRGDS tambem. O
  * controle vira teclas pelo gptokeyb do PortMaster (ver rgds/xsystem35.gptk)
  * com as mesmas teclas do Miyoo; A, B e Select tambem aceitam Z, X e S,
- * nomes de tecla que o gptokeyb com certeza conhece.
+ * nomes de tecla que o gptokeyb com certeza conhece. Sem dialogo de sair
+ * (Select + Start fecha o jogo) e sem a musica MIDI pre-gravada.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -50,6 +51,13 @@
 #include "nact.h"
 #include "msgskip.h"
 #include "miyoo.h"
+
+/* No RG DS o dialogo de sair fica compilado, mas sem uso. */
+#ifdef RGDS
+#define RGDS_UNUSED __attribute__((unused))
+#else
+#define RGDS_UNUSED
+#endif
 
 /* ---------------------------------------------------------------------- */
 /* Cursor por software                                                     */
@@ -590,7 +598,7 @@ static void draw_quit_dialog(const Uint32 *saved, int selected) {
 
 /* Mostra o dialogo e espera a resposta. O jogo fica pausado enquanto isso.
    D-pad escolhe, A confirma, B ou Menu cancelam. Retorna true para sair. */
-static bool run_quit_dialog(void) {
+RGDS_UNUSED static bool run_quit_dialog(void) {
 	if (!gfx_texture || view_w <= 0 || view_h <= 0)
 		return false;
 	miyoo_cursor_hide();
@@ -684,7 +692,7 @@ static bool run_quit_dialog(void) {
 /* Mouse virtual                                                           */
 /* ---------------------------------------------------------------------- */
 
-static bool quit_dialog_requested;
+RGDS_UNUSED static bool quit_dialog_requested;
 static Uint32 move_since, last_tick;
 static Uint32 last_present;
 static bool in_update;
@@ -784,8 +792,11 @@ bool miyoo_handle_event(SDL_Event *e) {
 			msgskip_activate(!msgskip_isActivated());
 		return true;
 	case SDLK_ESCAPE:  /* Menu */
+#ifndef RGDS
+		/* No RG DS nao tem dialogo: sai-se com Select + Start (gptokeyb). */
 		if (down)
 			quit_dialog_requested = true;
+#endif
 		return true;
 	default:
 		return false;  /* Start (Enter) e os demais seguem como teclas */
@@ -806,6 +817,7 @@ void miyoo_update(void) {
 	if (dt > 0.1f)
 		dt = 0.1f;
 
+#ifndef RGDS
 	if (quit_dialog_requested && !in_update) {
 		quit_dialog_requested = false;
 		if (run_quit_dialog()) {
@@ -815,6 +827,7 @@ void miyoo_update(void) {
 		now = SDL_GetTicks();
 		last_tick = now;
 	}
+#endif
 
 #ifdef RGDS
 	if (!stick_ready)
