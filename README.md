@@ -199,21 +199,6 @@ To log the cursor frame rate, set `MIYOO_FPS_LOG=1` in the game's
 If a game does not start, check
 `Roms/PORTS/Games/<Name>/log/run.log` on the SD card.
 
-## RG DS / RG DS Plus (BananaOS, ROCKNIX)
-
-The same patch also builds for the **Anbernic RG DS and RG DS Plus** (aarch64), packaged as a [PortMaster](https://portmaster.games/) port. It runs on **BananaOS** and **ROCKNIX**, which both ship PortMaster, SDL2 and FreeType; the port bundles its own SDL2_mixer with FluidSynth, so MIDI music plays live (with loop points) instead of being pre-rendered. The game draws on one screen (the top one on BananaOS), stretched from 640×480 to the full panel.
-
-Everything lives in `rgds/`. The build compiles with `-DMIYOO_MINI -DRGDS`: the Miyoo mode (virtual mouse, software cursor, frame pacing) plus a few RG DS changes: buttons reach the game as keys through PortMaster's `gptokeyb` and the left stick is read directly, with speed proportional to tilt; MIDI is played live instead of from `game/midi/` (no `midiconv`); there is no pause menu, since Select + Start already closes ports; audio problems are written to the log.
-
-```bash
-sudo ./rgds/build-rgds.sh ~/xsystem35-sdl2
-sudo ./rgds/package-rgds.sh ~/xsystem35-sdl2 ~/Rance1 Rance1 "Rance 1"
-# or, for a GitHub release zip without the game:
-sudo ./rgds/package-rgds.sh --release ~/xsystem35-sdl2 ~/Rance1 Rance1 "Rance 1"
-```
-
-The result is in `dist/rgds/<Name>/ports/`: copy its contents (`<Name>.sh` and the `<name>/` folder) into `roms/ports` on the SD card and start the game from Ports. Controls are the same as on the Miyoo, with the left stick also moving the cursor and **Select + Start** quitting (there is no pause menu). Button mapping is in `ports/<name>/xsystem35.gptk`. Logs: `ports/<name>/log/run.log`.
-
 ## Known limitations
 
 - Uses the prebuilt **640×480** SDL2 from steward-fu. Tested on the
