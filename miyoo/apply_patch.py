@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Aplica o "modo Miyoo Mini" no codigo do xsystem35-sdl2.
+"""Applies the "Miyoo Mini mode" to the xsystem35-sdl2 source.
 
-Uso: python3 apply_patch.py ~/xsystem35-sdl2
+Usage: python3 apply_patch.py ~/xsystem35-sdl2
 
-- copia miyoo.c e miyoo.h para src/
-- adiciona miyoo.c na lista de fontes do CMake
-- insere ganchos (todos dentro de #ifdef MIYOO_MINI) em event.c,
+- copies miyoo.c and miyoo.h to src/
+- adds miyoo.c to the CMake source list
+- inserts hooks (all inside #ifdef MIYOO_MINI) into event.c,
   gfx_draw.c, gfx_video.c, effect.c, midi.sdlmixer.c, mixer.sdl2mixer.c
-  (so para o RG DS) e system.c
+  (RG DS only) and system.c
 
-Pode ser rodado varias vezes: o que ja foi aplicado e pulado.
+Can be run several times: the original files are restored first.
 """
 import pathlib
 import shutil
@@ -20,36 +20,36 @@ MARK = "MIYOO_MINI"
 
 
 def fail(msg):
-    print("ERRO: " + msg)
+    print("ERROR: " + msg)
     sys.exit(1)
 
 
 def patch(path, edits):
-    """edits: lista de (ancora, texto_novo). A ancora precisa existir 1 vez."""
+    """edits: list of (anchor, new_text). Each anchor must appear exactly once."""
     src = path.read_text(encoding="utf-8")
     if MARK in src:
-        print(f"  {path.name}: ja estava aplicado")
+        print(f"  {path.name}: already applied")
         return
     for anchor, new in edits:
         n = src.count(anchor)
         if n != 1:
-            fail(f"{path.name}: trecho esperado aparece {n} vezes:\n{anchor}")
+            fail(f"{path.name}: expected text found {n} times:\n{anchor}")
         src = src.replace(anchor, new, 1)
     path.write_text(src, encoding="utf-8")
-    print(f"  {path.name}: aplicado")
+    print(f"  {path.name}: applied")
 
 
 def main():
     if len(sys.argv) != 2:
-        fail("uso: apply_patch.py <pasta do xsystem35-sdl2>")
+        fail("usage: apply_patch.py <xsystem35-sdl2 folder>")
     root = pathlib.Path(sys.argv[1]).expanduser().resolve()
     srcdir = root / "src"
     if not (srcdir / "event.c").exists():
-        fail(f"nao achei {srcdir / 'event.c'}")
+        fail(f"not found: {srcdir / 'event.c'}")
 
-    print("==> Aplicando modo Miyoo Mini em", root)
-    # Volta os arquivos ao original antes de aplicar, para que uma versao
-    # nova deste patch substitua a anterior.
+    print("==> Applying the Miyoo Mini mode to", root)
+    # Restore the original files first, so a new version of this patch
+    # replaces the previous one.
     import subprocess
     files = ["src/event.c", "src/gfx_draw.c", "src/gfx_video.c", "src/effect.c",
              "src/midi.sdlmixer.c", "src/mixer.sdl2mixer.c", "src/system.c",
@@ -57,27 +57,27 @@ def main():
     r = subprocess.run(["git", "-C", str(root), "checkout", "--"] + files,
                        capture_output=True, text=True)
     if r.returncode == 0:
-        print("  arquivos originais restaurados (git)")
+        print("  original files restored (git)")
     else:
-        print("  AVISO: nao consegui restaurar pelo git: " + r.stderr.strip())
+        print("  WARNING: could not restore with git: " + r.stderr.strip())
     for f in ("miyoo.c", "miyoo.h"):
         shutil.copy(HERE / f, srcdir / f)
-        print(f"  {f}: copiado")
+        print(f"  {f}: copied")
 
-    # CMake: compilar miyoo.c junto
+    # CMake: build miyoo.c too
     cm = srcdir / "CMakeLists.txt"
     txt = cm.read_text(encoding="utf-8")
     if "miyoo.c" not in txt:
         anchor = "  event.c\n"
         if txt.count(anchor) != 1:
-            fail("src/CMakeLists.txt: nao achei a linha '  event.c'")
+            fail("src/CMakeLists.txt: line '  event.c' not found")
         txt = txt.replace(anchor, anchor + "  miyoo.c\n", 1)
         cm.write_text(txt, encoding="utf-8")
-        print("  CMakeLists.txt: miyoo.c adicionado")
+        print("  CMakeLists.txt: miyoo.c added")
     else:
-        print("  CMakeLists.txt: ja estava aplicado")
+        print("  CMakeLists.txt: already applied")
 
-    # event.c: botoes -> mouse virtual; atualizar cursor a cada leitura
+    # event.c: buttons -> virtual mouse; update the cursor on every poll
     patch(srcdir / "event.c", [
         ('#include "volume.h"\n',
          '#include "volume.h"\n'
@@ -95,8 +95,8 @@ def main():
          "\tscheduler_on_event(scheduler_event);\n"),
     ])
 
-    # gfx_draw.c: desenhar o cursor antes de mostrar a tela, e apaga-lo
-    # antes de qualquer atualizacao da textura
+    # gfx_draw.c: draw the cursor before showing the screen, and erase it
+    # before any texture update
     patch(srcdir / "gfx_draw.c", [
         ('#include "debugger.h"\n',
          '#include "debugger.h"\n'
@@ -120,8 +120,8 @@ def main():
          "\tmiyoo_on_present();\n"
          "#endif\n"
          "\tgfx_dirty = false;\n"),
-        # O SDL do Miyoo ignora a posicao do retangulo ao travar a textura:
-        # trava a textura inteira e copia para a posicao certa.
+        # The Miyoo SDL ignores the rectangle position when locking a texture:
+        # lock the whole texture and copy to the right position.
         ("\tSDL_Surface *sf;\n"
          "\tSDL_LockTextureToSurface(gfx_texture, &dr, &sf);\n"
          "\tSDL_BlitSurface(main_surface, &sr, sf, NULL);\n",
@@ -136,7 +136,7 @@ def main():
          "#endif\n"),
     ])
 
-    # gfx_video.c: textura recriada / mouse "teleportado" pelo jogo
+    # gfx_video.c: texture recreated / mouse warped by the game
     patch(srcdir / "gfx_video.c", [
         ('#include "gfx_private.h"\n',
          '#include "gfx_private.h"\n'
@@ -153,7 +153,8 @@ def main():
          "\tevent_set_mouse_internal_location(x, y);\n"
          "#endif\n"),
     ])
-    # effect.c: texturas das transicoes num formato que o Miyoo desenha certo
+    # effect.c: transition textures composited in software (the Miyoo
+    # renderer draws alpha-blended textures incorrectly)
     patch(srcdir / "effect.c", [
         ('#include "gfx_private.h"\n',
          '#include "gfx_private.h"\n'
@@ -183,16 +184,16 @@ def main():
          "\tmiyoo_comp_end();\n"
          "#endif\n"),
     ])
-    # midi.sdlmixer.c: tocar musica MIDI pre-gravada (midi/<numero>.wav, .mp3
-    # ou .ogg na pasta do jogo) em vez de sintetizar no aparelho, que e pesado
-    # demais para o Miyoo.
+    # midi.sdlmixer.c: play pre-rendered MIDI music (midi/<number>.wav, .mp3
+    # or .ogg in the game folder) instead of synthesizing it on the device,
+    # which is too heavy for the Miyoo.
     patch(srcdir / "midi.sdlmixer.c", [
         ('#include "mixer.h"\n',
          '#include "mixer.h"\n'
          '#if defined(MIYOO_MINI) && !defined(RGDS)\n'
          '#include <stdio.h>\n'
          '#include <sys/stat.h>\n'
-         '/* Procura midi/<no>.wav, .mp3 ou .ogg na pasta do jogo. */\n'
+         '/* Looks for midi/<no>.wav, .mp3 or .ogg in the game folder. */\n'
          'static bool miyoo_prerendered(int no, char *path, size_t len) {\n'
          '\tstatic const char *ext[] = { "wav", "mp3", "ogg" };\n'
          '\tstruct stat st;\n'
@@ -211,7 +212,7 @@ def main():
          "\t{\n"
          "\t\tstruct stat st;\n"
          "\t\tif (stat(\"midi\", &st) == 0 && S_ISDIR(st.st_mode)) {\n"
-         "\t\t\tNOTICE(\"MIDI: usando musicas pre-gravadas da pasta midi/\");\n"
+         "\t\t\tNOTICE(\"MIDI: using pre-rendered music from the midi/ folder\");\n"
          "\t\t\treturn true;\n"
          "\t\t}\n"
          "\t}\n"
@@ -226,8 +227,8 @@ def main():
          "#endif\n"
          "\tmusic = mixer_music_load_midi(data, datalen);\n"),
     ])
-    # mixer.sdl2mixer.c (so no RG DS): se o som nao abrir, escrever o motivo
-    # no log, e dizer qual saida de som e qual banco MIDI foram usados.
+    # mixer.sdl2mixer.c (RG DS only): if audio fails to open, write the reason
+    # to the log, and report which audio driver and MIDI sound bank are used.
     patch(srcdir / "mixer.sdl2mixer.c", [
         ('#include "mixer.h"\n',
          '#include "mixer.h"\n'
@@ -236,28 +237,28 @@ def main():
          "\t\treturn false;\n",
          "\tif (Mix_OpenAudioDevice(SAMPLE_RATE, AUDIO_S16LSB, 2, buffer_size, NULL, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE) < 0) {\n"
          "#if defined(MIYOO_MINI) && defined(RGDS)\n"
-         "\t\tfprintf(stderr, \"[rgds] som: nao abriu (%s), driver %s\\n\", SDL_GetError(),\n"
-         "\t\t        SDL_GetCurrentAudioDriver() ? SDL_GetCurrentAudioDriver() : \"nenhum\");\n"
+         "\t\tfprintf(stderr, \"[rgds] audio: failed to open (%s), driver %s\\n\", SDL_GetError(),\n"
+         "\t\t        SDL_GetCurrentAudioDriver() ? SDL_GetCurrentAudioDriver() : \"none\");\n"
          "#endif\n"
          "\t\treturn false;\n"
          "\t}\n"
          "#if defined(MIYOO_MINI) && defined(RGDS)\n"
-         "\tfprintf(stderr, \"[rgds] som: ok, driver %s\\n\", SDL_GetCurrentAudioDriver());\n"
+         "\tfprintf(stderr, \"[rgds] audio: ok, driver %s\\n\", SDL_GetCurrentAudioDriver());\n"
          "#endif\n"),
         ("\treturn Mix_Init(MIX_INIT_MID) == MIX_INIT_MID;\n",
          "#if defined(MIYOO_MINI) && defined(RGDS)\n"
          "\t{\n"
          "\t\tbool ok = (Mix_Init(MIX_INIT_MID) & MIX_INIT_MID) != 0;\n"
-         "\t\tfprintf(stderr, \"[rgds] MIDI (FluidSynth): %s, banco %s\\n\", ok ? \"ok\" : SDL_GetError(),\n"
-         "\t\t        Mix_GetSoundFonts() ? Mix_GetSoundFonts() : \"nenhum\");\n"
+         "\t\tfprintf(stderr, \"[rgds] MIDI (FluidSynth): %s, sound bank %s\\n\", ok ? \"ok\" : SDL_GetError(),\n"
+         "\t\t        Mix_GetSoundFonts() ? Mix_GetSoundFonts() : \"none\");\n"
          "\t\treturn ok;\n"
          "\t}\n"
          "#endif\n"
          "\treturn Mix_Init(MIX_INIT_MID) == MIX_INIT_MID;\n"),
     ])
-    # system.c: ritmo de quadros constante (~60/s). O original dorme 16 ms
-    # DEPOIS de desenhar; no Miyoo o desenho leva varios ms, entao os quadros
-    # ficavam irregulares e o cursor "tremia". Aqui dorme so o que falta.
+    # system.c: steady frame pacing (~60/s). The original sleeps 16 ms AFTER
+    # drawing; on the Miyoo drawing takes several ms, so frames were uneven
+    # and the cursor stuttered. Here it only sleeps for the time left.
     patch(srcdir / "system.c", [
         ('#include "scheduler.h"\n',
          '#include "scheduler.h"\n'
@@ -267,7 +268,7 @@ def main():
          "\tmiyoo_wait_frame();\n"
          "#else\n\tSDL_Delay(16);\n#endif\n"),
     ])
-    print("==> Pronto.")
+    print("==> Done.")
 
 
 if __name__ == "__main__":

@@ -1,13 +1,13 @@
-# Imagem de cross-compilacao do xsystem35-sdl2 para o RG DS / RG DS Plus
-# (BananaOS e ROCKNIX, via PortMaster). aarch64, Cortex-A55 (RK3566).
+# Cross-compilation image of xsystem35-sdl2 for the RG DS / RG DS Plus
+# (BananaOS and ROCKNIX, via PortMaster). aarch64, Cortex-A55 (RK3566).
 #
-# Debian bookworm com multiarch: compila em x86-64 contra as bibliotecas
-# arm64 do proprio Debian. O binario usa o SDL2, SDL2_mixer, freetype e zlib
-# do APARELHO (o BananaOS e o ROCKNIX ja tem); a glibc do bookworm (2.36)
-# e mais velha que a deles, entao o binario roda nos dois.
+# Debian bookworm with multiarch: builds on x86-64 against Debian's own arm64
+# libraries. The binary uses the DEVICE's SDL2, freetype and zlib (BananaOS and
+# ROCKNIX ship them); bookworm's glibc (2.36) is older than theirs, so the
+# binary runs on both.
 #
-# Construir:  docker build -t xsystem35-rgds-toolchain rgds/
-# (o rgds/build-rgds.sh faz isso sozinho)
+# Build:  docker build -t xsystem35-rgds-toolchain rgds/
+# (rgds/build-rgds.sh does this by itself)
 
 FROM debian:bookworm
 
@@ -20,11 +20,11 @@ RUN dpkg --add-architecture arm64 && \
         libfreetype-dev:arm64 zlib1g-dev:arm64 && \
     rm -rf /var/lib/apt/lists/*
 
-# pkg-config e CMake procurando so as bibliotecas arm64.
+# pkg-config and CMake only look at the arm64 libraries.
 ENV PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
 
-# FluidSynth para o SDL2_mixer abaixo tocar a musica MIDI na hora.
-# Sem GLib (osal=cpp11), como no build do Miyoo; vai como libs/libfluidsynth.so.3.
+# FluidSynth, so the SDL2_mixer below can play MIDI music live.
+# Without GLib (osal=cpp11), like the Miyoo build; shipped as libs/libfluidsynth.so.3.
 ENV GIT_TERMINAL_PROMPT=0
 RUN git clone --depth 1 --branch v2.5.7 https://github.com/FluidSynth/fluidsynth /tmp/fluidsynth && \
     cd /tmp/fluidsynth && git submodule update --init --depth 1 gcem && \
@@ -53,12 +53,12 @@ RUN git clone --depth 1 --branch v2.5.7 https://github.com/FluidSynth/fluidsynth
     test -e /opt/fluid/lib/libfluidsynth.so.3 && \
     rm -rf /tmp/fluidsynth
 
-# SDL2_mixer proprio, com MIDI pelo FluidSynth acima: o SDL2_mixer do BananaOS
-# nao toca MIDI. Vai no port como libs/libSDL2_mixer-2.0.so.0 e toca a musica
-# MIDI em tempo real (o RK3566 aguenta), sem converter nada.
-# MP3 (minimp3), OGG (stb_vorbis) e WAV embutidos; o resto desligado.
-# FluidSynth_DIR aponta para o NOSSO FluidSynth: o libsdl2-mixer-dev do Debian
-# traz o dele (arm64) e o CMake pegava aquele.
+# Our own SDL2_mixer, with MIDI through the FluidSynth above: BananaOS's
+# SDL2_mixer can't play MIDI. It ships in the port as libs/libSDL2_mixer-2.0.so.0
+# and plays MIDI music in real time (the RK3566 can handle it), no conversion.
+# Built-in MP3 (minimp3), OGG (stb_vorbis) and WAV; everything else off.
+# FluidSynth_DIR points to OUR FluidSynth: Debian's libsdl2-mixer-dev brings
+# its own (arm64) and CMake used to pick that one.
 RUN git clone --depth 1 --branch release-2.8.1 https://github.com/libsdl-org/SDL_mixer /tmp/mixer && \
     cd /tmp/mixer && \
     cmake -S . -B build \

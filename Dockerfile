@@ -1,12 +1,12 @@
-# Imagem de cross-compilação do xsystem35-sdl2 para Miyoo Mini (OnionOS).
-# Baseada na receita do OpenRCT2mini (Packaging/miyoo_mini/Dockerfile).
+# Cross-compilation image of xsystem35-sdl2 for the Miyoo Mini (OnionOS).
+# Based on OpenRCT2mini's recipe (Packaging/miyoo_mini/Dockerfile).
 #
-# Construir:  docker build -t xsystem35-miyoo-toolchain .
-# (o build.sh faz isso sozinho na primeira vez)
+# Build:  docker build -t xsystem35-miyoo-toolchain .
+# (build.sh does this by itself the first time)
 
 FROM ghcr.io/onionui/miyoomini-toolchain:latest
 
-# O Debian "buster" foi arquivado: apontar o apt para archive.debian.org.
+# Debian "buster" was archived: point apt to archive.debian.org.
 RUN sed -i 's|deb.debian.org|archive.debian.org|g; s|security.debian.org|archive.debian.org|g; /buster-updates/d' \
         /etc/apt/sources.list && \
     echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99no-check-valid-until && \
@@ -15,35 +15,35 @@ RUN sed -i 's|deb.debian.org|archive.debian.org|g; s|security.debian.org|archive
         pkg-config wget tar git autoconf automake libtool gettext && \
     rm -rf /var/lib/apt/lists/*
 
-# Downloads em camadas separadas: ficam em cache e não são refeitos quando
-# só o build-deps.sh muda.
+# Downloads in separate layers: they stay cached and are not redone when
+# only build-deps.sh changes.
 ENV GIT_TERMINAL_PROMPT=0
 RUN git clone --depth 1 https://github.com/steward-fu/sdl2 /opt/steward-sdl2
 RUN wget -q -O /opt/SDL2_mixer-2.6.3.tar.gz \
     https://github.com/libsdl-org/SDL_mixer/releases/download/release-2.6.3/SDL2_mixer-2.6.3.tar.gz
 
-# Instala cabeçalhos do SDL2 (do repositório do Steward Fu), o SDL2 pré-compilado
-# do Miyoo Mini e o SDL2_mixer no sysroot da toolchain.
+# Installs the SDL2 headers (from Steward Fu's repository), the prebuilt Miyoo
+# Mini SDL2 and SDL2_mixer into the toolchain sysroot.
 COPY build-deps.sh /opt/build-deps.sh
 RUN chmod +x /opt/build-deps.sh && bash -lc /opt/build-deps.sh
 
-# CMake mais novo: o do Debian buster (3.13) nao serve para o xsystem35,
-# que usa "add_library(... ALIAS ...)" em alvos importados (precisa de 3.18+).
+# Newer CMake: Debian buster's (3.13) is too old for xsystem35, which uses
+# "add_library(... ALIAS ...)" on imported targets (needs 3.18+).
 RUN mkdir -p /opt/cmake && \
     wget -q -O /tmp/cmake.tar.gz \
         https://github.com/Kitware/CMake/releases/download/v3.27.9/cmake-3.27.9-linux-x86_64.tar.gz && \
     tar xzf /tmp/cmake.tar.gz --strip-components=1 -C /opt/cmake && \
     rm /tmp/cmake.tar.gz
 
-# Musica MIDI: FluidSynth (sem GLib) + SDL2_mixer recompilado com MIDI.
+# MIDI music: FluidSynth (without GLib) + SDL2_mixer rebuilt with MIDI.
 COPY build-midi.sh /opt/build-midi.sh
 RUN apt-get -o Acquire::AllowInsecureRepositories=true update && \
     apt-get install -y --allow-unauthenticated python3 && \
     rm -rf /var/lib/apt/lists/* && \
     chmod +x /opt/build-midi.sh && bash -lc /opt/build-midi.sh
 
-# json-c 0.15 (libjson-c.so.5): o SDL2 do Miyoo depende dela e o aparelho nao
-# a tem. O README do steward-fu/sdl2 lista json-c-0.15 como dependencia.
+# json-c 0.15 (libjson-c.so.5): the Miyoo SDL2 depends on it and the device
+# doesn't have it. The steward-fu/sdl2 README lists json-c-0.15 as a dependency.
 RUN SYSROOT=$(/opt/miyoomini-toolchain/usr/bin/arm-linux-gnueabihf-gcc -print-sysroot) && \
     wget -q -O /tmp/jsonc.tar.gz \
         https://github.com/json-c/json-c/archive/refs/tags/json-c-0.15-20200726.tar.gz && \
@@ -63,28 +63,28 @@ RUN SYSROOT=$(/opt/miyoomini-toolchain/usr/bin/arm-linux-gnueabihf-gcc -print-sy
     ls -la /opt/miyoo-runtime/libjson-c.so.5 && \
     rm -rf /tmp/jsonc /tmp/jsonc.tar.gz
 
-# O CMake do xsystem35 pede "sdl2>=2.18.0", mas o SDL2 nunca teve 2.18.x: a
-# numeracao foi de 2.0.22 direto para 2.24.0. O SDL2 do Miyoo e o 2.0.20 e o
-# pkg-config o considera "velho". Trocamos so o rotulo de versao no sdl2.pc.
-# Se faltar alguma funcao do SDL na compilacao, o erro vai aparecer la.
+# xsystem35's CMake asks for "sdl2>=2.18.0", but SDL2 never had a 2.18.x: the
+# numbering went from 2.0.22 straight to 2.24.0. The Miyoo SDL2 is 2.0.20 and
+# pkg-config considers it "too old". Only the version label in sdl2.pc is
+# changed. If an SDL function is missing, the compiler will say so.
 RUN sed -i 's|^Version:.*|Version: 2.28.0|' \
     /opt/miyoomini-toolchain/arm-linux-gnueabihf/libc/usr/lib/pkgconfig/sdl2.pc && \
     grep -n '^Version' /opt/miyoomini-toolchain/arm-linux-gnueabihf/libc/usr/lib/pkgconfig/sdl2.pc
 
-# Os .pc da toolchain (ex.: freetype2.pc) trazem caminhos fixos como
-# "includedir=/usr/include/freetype2", validos so dentro do sysroot. O CMake os
-# procura no /usr do container e falha. Reescrever para o caminho absoluto.
+# The toolchain .pc files (e.g. freetype2.pc) have fixed paths such as
+# "includedir=/usr/include/freetype2", only valid inside the sysroot. CMake
+# looks for them in the container's /usr and fails. Rewrite to absolute paths.
 RUN P=/opt/miyoomini-toolchain/arm-linux-gnueabihf/libc/usr && \
     for f in $P/lib/pkgconfig/*.pc; do \
         sed -i -E "s#^([A-Za-z_]+)=/usr(/|\$)#\1=$P\2#; s#-I/usr/#-I$P/#g; s#-L/usr/#-L$P/#g" "$f"; \
     done && \
     grep -H -E "^(prefix|libdir|includedir)=|^Cflags" $P/lib/pkgconfig/freetype2.pc || true
 
-# pkg-config precisa procurar dentro do sysroot ARM.
+# pkg-config must search inside the ARM sysroot.
 ENV PKG_CONFIG_LIBDIR=/opt/miyoomini-toolchain/arm-linux-gnueabihf/libc/usr/lib/pkgconfig
 
-# O compilador ARM só entra no PATH via .bashrc; deixar fixo na imagem.
-# /opt/cmake/bin vem primeiro para usar o CMake novo.
+# The ARM compiler is only added to PATH by .bashrc; make it permanent.
+# /opt/cmake/bin comes first so the newer CMake is used.
 ENV PATH=/opt/cmake/bin:/opt/miyoomini-toolchain/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 WORKDIR /src

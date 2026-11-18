@@ -1,13 +1,13 @@
 #!/bin/bash
-# Suporte a musica MIDI (jogos como Rance 1 guardam a trilha em MIDI e
-# trazem um banco de sons .sf2).
+# MIDI music support (games such as Rance 1 store their soundtrack as MIDI
+# and ship a .sf2 sound bank).
 #
-#  1) FluidSynth 2.5.7 sem GLib (osal=cpp11) -> libfluidsynth.so.3
-#  2) SDL2_mixer 2.6.3 recompilado com MIDI via FluidSynth, carregado em
-#     tempo de execucao (se a lib nao existir, o jogo roda sem musica MIDI)
-#  3) Ajustes de desempenho para o Miyoo: sem reverb/chorus e polifonia menor
+#  1) FluidSynth 2.5.7 without GLib (osal=cpp11) -> libfluidsynth.so.3
+#  2) SDL2_mixer 2.6.3 rebuilt with MIDI through FluidSynth, loaded at run
+#     time (if the library is missing, the game runs without MIDI music)
+#  3) Performance tweaks for the Miyoo: no reverb/chorus, lower polyphony
 #
-# Roda DENTRO do Docker durante o "docker build" (depois do build-deps.sh).
+# Runs INSIDE Docker during "docker build" (after build-deps.sh).
 
 set -euo pipefail
 
@@ -27,7 +27,7 @@ echo "==[ FluidSynth 2.5.7 ]========================================"
 cd "$BUILD_DIR"
 git clone --depth 1 --branch v2.5.7 https://github.com/FluidSynth/fluidsynth fluidsynth
 cd fluidsynth
-# O GCEM (biblioteca de matematica) vem como submodulo.
+# GCEM (a math library) comes as a submodule.
 git submodule update --init --depth 1 gcem
 
 cat > "$BUILD_DIR/arm.cmake" <<EOF
@@ -60,21 +60,21 @@ EOF
 /opt/cmake/bin/cmake --build build -j"$NPROC"
 /opt/cmake/bin/cmake --install build
 
-[ -e "$PREFIX/lib/libfluidsynth.so.3" ] || { echo "libfluidsynth.so.3 nao foi instalada"; ls "$PREFIX/lib" | grep -i fluid; exit 1; }
+[ -e "$PREFIX/lib/libfluidsynth.so.3" ] || { echo "libfluidsynth.so.3 was not installed"; ls "$PREFIX/lib" | grep -i fluid; exit 1; }
 cp -L "$PREFIX/lib/libfluidsynth.so.3" "$RUNTIME_DIR/"
 ${HOST_TRIPLE}-strip --strip-unneeded "$RUNTIME_DIR/libfluidsynth.so.3"
-echo "Dependencias da libfluidsynth:"
+echo "libfluidsynth dependencies:"
 ${HOST_TRIPLE}-readelf -d "$RUNTIME_DIR/libfluidsynth.so.3" | grep NEEDED || true
 
 ##############################################################################
-# 2) SDL2_mixer com MIDI (FluidSynth carregado dinamicamente)
+# 2) SDL2_mixer with MIDI (FluidSynth loaded dynamically)
 ##############################################################################
 echo "==[ SDL2_mixer + MIDI ]========================================"
 cd "$BUILD_DIR"
 tar xf /opt/SDL2_mixer-2.6.3.tar.gz
 cd SDL2_mixer-2.6.3
 
-# Ajustes para o processador do Miyoo: sem reverb/chorus, polifonia 64.
+# Tweaks for the Miyoo CPU: no reverb/chorus, polyphony 64.
 python3 - <<'PYEOF'
 import pathlib
 p = pathlib.Path('src/codecs/music_fluidsynth.c')
@@ -88,15 +88,15 @@ s = s.replace(
     '        FUNCTION_LOADER(fluid_settings_setnum, int (*)(fluid_settings_t*, const char*, double))\n'
     '        FUNCTION_LOADER(fluid_settings_setint, int (*)(fluid_settings_t*, const char*, int))\n', 1)
 anchor = '    fluidsynth.fluid_settings_setnum(music->settings, "synth.sample-rate", (double) music_spec.freq);\n'
-assert anchor in s, 'ancora sample-rate nao encontrada'
+assert anchor in s, 'sample-rate anchor not found'
 s = s.replace(anchor, anchor +
-    '    /* Miyoo Mini: economizar processador */\n'
+    '    /* Miyoo Mini: save CPU */\n'
     '    fluidsynth.fluid_settings_setint(music->settings, "synth.reverb.active", 0);\n'
     '    fluidsynth.fluid_settings_setint(music->settings, "synth.chorus.active", 0);\n'
     '    fluidsynth.fluid_settings_setint(music->settings, "synth.polyphony", 64);\n', 1)
 assert 'fluid_settings_setint)(' in s and 'FUNCTION_LOADER(fluid_settings_setint' in s
 p.write_text(s)
-print('music_fluidsynth.c ajustado')
+print('music_fluidsynth.c patched')
 PYEOF
 
 export CC="${HOST_TRIPLE}-gcc"
@@ -119,9 +119,9 @@ export LDFLAGS="-L$PREFIX/lib -Wl,--allow-shlib-undefined -Wl,-rpath-link,$PREFI
     --disable-music-mod --disable-music-flac --disable-music-opus \
     | tee /tmp/mixer-configure.log
 grep -q "dynamic libfluidsynth" /tmp/mixer-configure.log || {
-    echo "ERRO: o SDL2_mixer nao encontrou a libfluidsynth"; exit 1; }
+    echo "ERROR: SDL2_mixer did not find libfluidsynth"; exit 1; }
 make -j"$NPROC"
 make install
 
 rm -rf "$BUILD_DIR"
-echo "==[ MIDI pronto ]=============================================="
+echo "==[ MIDI done ]==============================================="

@@ -15,7 +15,8 @@ builds made for xsystem35-sdl2, not the AppImages).
 |---|---|---|---|
 | Kichikuou Rance | English | MP3 (included in the game folder) | — |
 | Rance 1 – Quest for Hikari | English | MIDI | converted on the Miyoo on first launch (~5 min) |
-| Rance III | English | MIDI | converted on the Miyoo on first launch (~10 min) |
+| Rance II | English (fan translation port) | MIDI | needs the translation files, see [Rance II](#rance-ii); music converted on first launch (~12 min) |
+| Rance III | English | MIDI | converted on the Miyoo on first launch (~12 min) |
 | Rance IV | English | MP3 (included in the game folder) | — |
 
 Other games supported by xsystem35-sdl2 will probably work the same way.
@@ -25,8 +26,8 @@ Other games supported by xsystem35-sdl2 will probably work the same way.
 Ready-to-use packages are on the [Releases](../../releases) page, one zip
 per game. They contain the port only (the Miyoo build of xsystem35, its
 libraries, the launcher and the OnionOS shortcut), **not the game**. The
-zips for MIDI games (Rance 1 and Rance III) also include the music
-converter (`midiconv`, see [MIDI music](#midi-music-rance-1-and-rance-iii)).
+zips for MIDI games (Rance 1, II and III) also include the music
+converter (`midiconv`, see [MIDI music](#midi-music-rance-1-rance-ii-and-rance-iii)).
 
 1. Extract the zip on your PC.
 2. Download the English `.tar.gz` of the same game from
@@ -34,16 +35,42 @@ converter (`midiconv`, see [MIDI music](#midi-music-rance-1-and-rance-iii)).
    your PC.
 3. Copy everything from the game folder (the `.ALD` files and the rest)
    into the zip's `Roms/PORTS/Games/<Name>/game/` folder.
+   **Rance II** is different (Japanese game + translation files): see
+   [Rance II](#rance-ii).
 4. Copy the `Roms` folder to the **root of the SD card** (it merges with the
    `Roms` folder already there).
 5. In OnionOS, open **Ports** and run **~Import ports**. The game appears
    once its files are in place.
-6. **Rance 1 and Rance III only:** the first launch converts the music
+6. **Rance 1, II and III only:** the first launch converts the music
    (see below). Later launches start the game directly.
 
-## MIDI music (Rance 1 and Rance III)
+## Rance II
 
-These two games store their soundtrack as MIDI, and synthesizing MIDI in
+haniwa.technology only has Rance II in Japanese. The English version comes
+from **velt211's translation port**
+([AliceSoft Wiki](https://alicesoft.miraheze.org/wiki/User_blog:Velt211/Rance_II_translation_port_release)),
+made for the same Windows freeware version that xsystem35 runs. It ships
+ready-made files, so nothing needs to be compiled:
+
+1. Copy everything from the Japanese `RanceII` `.tar.gz` (haniwa.technology)
+   into `Roms/PORTS/Games/Rance2/game/`.
+2. From the translation folder (`Rance II [ENG]`), copy **only**
+   `RANCE2SA.ALD`, `RANCE2GA.ald` and `System39.ain` into the same `game/`
+   folder, replacing the Japanese files. The rest (`SETUP.EXE`,
+   `System39.exe`, `System39.ini`, `System39.ain_decrypted`) is for Windows.
+3. Copy `Roms` to the SD card and run **~Import ports**. The Rance II
+   shortcut only shows up once `System39.ain` is in place, so it can't be
+   started in Japanese by mistake.
+
+`launch.sh` adds the `Ain System39.ain` line that xsystem35 needs to
+`xsystem35.gr` automatically, so no file has to be edited by hand.
+
+Known issues of the translation (from its readme): the stat and scan
+screens are not neatly formatted, and some attack texts are reused.
+
+## MIDI music (Rance 1, Rance II and Rance III)
+
+These games store their soundtrack as MIDI, and synthesizing MIDI in
 real time is too heavy for the Miyoo: the music stutters and the game slows
 down. So the music is converted to audio files **once**, using the game's
 own sound bank (`TimGM6mb.sf2`), so it sounds the same as on the PC.
@@ -56,7 +83,8 @@ converts every track to WAV (22 kHz) in `game/midi/`. Then the game starts.
 | Game | Time (Miyoo Mini) | Space on the SD card |
 |---|---|---|
 | Rance 1 | about 5 min | about 200 MB |
-| Rance III | about 10 min | about 420 MB |
+| Rance II | about 12 min | about 430 MB |
+| Rance III | about 12 min | about 420 MB |
 
 - Press **Menu** to stop. The tracks already converted are kept, and it
   continues the next time you open the game.
@@ -105,7 +133,8 @@ limitations. The patch in `miyoo/` (enabled only when building with
   the Miyoo renderer draws alpha-blended textures incorrectly;
 - steady **~60 fps frame pacing** (the original sleeps 16 ms after each
   frame, which on the Miyoo dropped the cursor to ~30 fps);
-- a **"Do you want to leave?"** dialog on the Menu button;
+- a **pause menu** on the Menu button: RESUME GAME, RESTART GAME and
+  EXIT GAME (restart and exit ask "ARE YOU SURE?" first);
 - playback of **pre-rendered MIDI music** (`game/midi/<n>.wav`, `.mp3` or
   `.ogg`), since synthesizing MIDI in real time is too heavy for the Miyoo
   CPU. The WAVs are made on the device by `tools/midiconv.c`.
@@ -121,7 +150,7 @@ limitations. The patch in `miyoo/` (enabled only when building with
 | B | right click (cancel / game menu) |
 | Start | Enter |
 | Select | toggle message skip |
-| Menu | "Do you want to leave?" (A confirms, B cancels) |
+| Menu | pause menu: RESUME GAME / RESTART GAME / EXIT GAME (A selects, B resumes; restart and exit ask "ARE YOU SURE?", A again confirms) |
 
 ## Building (Linux or Windows + WSL)
 
@@ -174,7 +203,7 @@ If a game does not start, check
 
 The same patch also builds for the **Anbernic RG DS and RG DS Plus** (aarch64), packaged as a [PortMaster](https://portmaster.games/) port. It runs on **BananaOS** and **ROCKNIX**, which both ship PortMaster, SDL2 and FreeType; the port bundles its own SDL2_mixer with FluidSynth, so MIDI music plays live (with loop points) instead of being pre-rendered. The game draws on one screen (the top one on BananaOS), stretched from 640×480 to the full panel.
 
-Everything lives in `rgds/`. The build compiles with `-DMIYOO_MINI -DRGDS`: the Miyoo mode (virtual mouse, software cursor, frame pacing) plus a few RG DS changes: buttons reach the game as keys through PortMaster's `gptokeyb` and the left stick is read directly, with speed proportional to tilt; MIDI is played live instead of from `game/midi/` (no `midiconv`); there is no quit dialog, since Select + Start already closes ports; audio problems are written to the log.
+Everything lives in `rgds/`. The build compiles with `-DMIYOO_MINI -DRGDS`: the Miyoo mode (virtual mouse, software cursor, frame pacing) plus a few RG DS changes: buttons reach the game as keys through PortMaster's `gptokeyb` and the left stick is read directly, with speed proportional to tilt; MIDI is played live instead of from `game/midi/` (no `midiconv`); there is no pause menu, since Select + Start already closes ports; audio problems are written to the log.
 
 ```bash
 sudo ./rgds/build-rgds.sh ~/xsystem35-sdl2
@@ -183,7 +212,7 @@ sudo ./rgds/package-rgds.sh ~/xsystem35-sdl2 ~/Rance1 Rance1 "Rance 1"
 sudo ./rgds/package-rgds.sh --release ~/xsystem35-sdl2 ~/Rance1 Rance1 "Rance 1"
 ```
 
-The result is in `dist/rgds/<Name>/ports/`: copy its contents (`<Name>.sh` and the `<name>/` folder) into `roms/ports` on the SD card and start the game from Ports. Controls are the same as on the Miyoo, with the left stick also moving the cursor and **Select + Start** quitting (there is no quit dialog). Button mapping is in `ports/<name>/xsystem35.gptk`. Logs: `ports/<name>/log/run.log`.
+The result is in `dist/rgds/<Name>/ports/`: copy its contents (`<Name>.sh` and the `<name>/` folder) into `roms/ports` on the SD card and start the game from Ports. Controls are the same as on the Miyoo, with the left stick also moving the cursor and **Select + Start** quitting (there is no pause menu). Button mapping is in `ports/<name>/xsystem35.gptk`. Logs: `ports/<name>/log/run.log`.
 
 ## Known limitations
 
@@ -202,6 +231,7 @@ The result is in `dist/rgds/<Name>/ports/`: copy its contents (`<Name>.sh` and t
   reference for the Docker toolchain setup
 - [SDL_mixer](https://github.com/libsdl-org/SDL_mixer), [FluidSynth](https://github.com/FluidSynth/fluidsynth),
   [json-c](https://github.com/json-c/json-c)
+- Rance II English translation port by velt211
 - Game files: AliceSoft (distributed under AliceSoft's free distribution
   declaration) and the respective fan translators, via
   [haniwa.technology](https://haniwa.technology/games/)

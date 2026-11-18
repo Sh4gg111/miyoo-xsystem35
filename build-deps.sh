@@ -1,12 +1,12 @@
 #!/bin/bash
-# Prepara o sysroot do Miyoo Mini para compilar o xsystem35-sdl2:
-#  1) cabeçalhos / sdl2-config / sdl2.pc do SDL2 (repositório steward-fu/sdl2)
-#  2) o libSDL2 PRÉ-COMPILADO do Miyoo Mini (prebuilt/640x480) + libs da SigmaStar
-#  3) SDL2_mixer 2.6.3 (MP3 e Ogg embutidos)
-# freetype e zlib já existem no sysroot da toolchain.
+# Prepares the Miyoo Mini sysroot to build xsystem35-sdl2:
+#  1) SDL2 headers / sdl2-config / sdl2.pc (steward-fu/sdl2 repository)
+#  2) the PREBUILT Miyoo Mini libSDL2 (prebuilt/640x480) + SigmaStar libraries
+#  3) SDL2_mixer 2.6.3 (built-in MP3 and Ogg)
+# freetype and zlib already exist in the toolchain sysroot.
 #
-# Roda DENTRO do Docker durante o "docker build".
-# O repositório e o tarball do mixer já foram baixados pelo Dockerfile.
+# Runs INSIDE Docker during "docker build".
+# The repository and the mixer tarball were already downloaded by the Dockerfile.
 
 set -euo pipefail
 
@@ -24,27 +24,27 @@ export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 COMMON_CFLAGS="-marm -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard -march=armv7ve -O2"
 
 ##############################################################################
-# Os .pc da toolchain usam "prefix=/usr" (relativo ao sysroot). Trocar por
-# caminho absoluto para o pkg-config funcionar sem PKG_CONFIG_SYSROOT_DIR.
+# The toolchain .pc files use "prefix=/usr" (relative to the sysroot). Use an
+# absolute path so pkg-config works without PKG_CONFIG_SYSROOT_DIR.
 ##############################################################################
-echo "==[ ajustando prefix dos .pc existentes ]======================"
+echo "==[ fixing the prefix of existing .pc files ]================="
 for f in "$PREFIX"/lib/pkgconfig/*.pc; do
     [ -f "$f" ] || continue
     sed -i "s|^prefix=/usr$|prefix=$PREFIX|" "$f"
 done
 
 ##############################################################################
-# 1) Cabeçalhos e arquivos de configuração do SDL2.
-#    So rodamos o configure (com os mesmos flags do Makefile do autor) para
-#    gerar SDL_config.h, sdl2-config e sdl2.pc; NAO compilamos o SDL2.
+# 1) SDL2 headers and configuration files.
+#    Only configure runs (with the same flags as the author's Makefile) to
+#    generate SDL_config.h, sdl2-config and sdl2.pc; SDL2 is NOT compiled.
 ##############################################################################
-echo "==[ SDL2: cabecalhos e sdl2-config ]============================"
+echo "==[ SDL2: headers and sdl2-config ]============================"
 for d in sdl2 mini prebuilt/640x480; do
-    [ -e "$SDL_SRC/$d" ] || { echo "Faltou $SDL_SRC/$d"; ls "$SDL_SRC"; exit 1; }
+    [ -e "$SDL_SRC/$d" ] || { echo "Missing $SDL_SRC/$d"; ls "$SDL_SRC"; exit 1; }
 done
 cd "$SDL_SRC/sdl2"
 
-# SDL_revision.h normalmente vem do git; garantir um stub.
+# SDL_revision.h normally comes from git; provide a stub.
 mkdir -p include
 cat > include/SDL_revision.h <<'REV_EOF'
 #define SDL_REVISION "xsystem35-miyoo-sdl2"
@@ -53,8 +53,8 @@ REV_EOF
 
 ./autogen.sh
 
-# O configure do driver "mini" ja injeta seus proprios -mcpu/-mfpu em EXTRA_CFLAGS;
-# rodar sem CFLAGS nossos para nao misturar -march com -mcpu.
+# The "mini" driver configure already adds its own -mcpu/-mfpu to EXTRA_CFLAGS;
+# run without our CFLAGS so -march and -mcpu don't get mixed.
 (
     unset CFLAGS CXXFLAGS
     ./configure \
@@ -70,16 +70,16 @@ REV_EOF
 
 make install-hdrs
 make install-bin
-make install-data || echo "AVISO: make install-data falhou (pkg-config/cmake do SDL2 podem faltar)"
+make install-data || echo "WARNING: make install-data failed (SDL2 pkg-config/cmake files may be missing)"
 
-[ -f "$PREFIX/include/SDL2/SDL.h" ]  || { echo "SDL.h nao foi instalado";  exit 1; }
-[ -x "$PREFIX/bin/sdl2-config" ]     || { echo "sdl2-config nao foi instalado"; exit 1; }
+[ -f "$PREFIX/include/SDL2/SDL.h" ]  || { echo "SDL.h was not installed";  exit 1; }
+[ -x "$PREFIX/bin/sdl2-config" ]     || { echo "sdl2-config was not installed"; exit 1; }
 
 ##############################################################################
-# 2) SDL2 pré-compilado (640x480, a resolução do Kichikuou Rance) e as libs
-#    de que ele depende. Elas ficam tambem em $RUNTIME_DIR para empacotar.
+# 2) Prebuilt SDL2 (640x480, Kichikuou Rance's resolution) and the libraries
+#    it depends on. They also go to $RUNTIME_DIR for packaging.
 ##############################################################################
-echo "==[ SDL2 pre-compilado + libs SigmaStar ]======================="
+echo "==[ prebuilt SDL2 + SigmaStar libraries ]======================"
 cd "$SDL_SRC"
 mkdir -p "$RUNTIME_DIR"
 cp prebuilt/640x480/libSDL2-2.0.so.0 prebuilt/640x480/libEGL.so prebuilt/640x480/libGLESv2.so "$RUNTIME_DIR/"
@@ -89,23 +89,23 @@ cp mini/lib/*.so "$RUNTIME_DIR/" 2>/dev/null || true
 cp "$RUNTIME_DIR"/*.so* "$PREFIX/lib/"
 ln -sf libSDL2-2.0.so.0 "$PREFIX/lib/libSDL2.so"
 
-echo "Bibliotecas de que o libSDL2 pre-compilado depende:"
+echo "Libraries the prebuilt libSDL2 depends on:"
 ${HOST_TRIPLE}-readelf -d "$PREFIX/lib/libSDL2-2.0.so.0" | grep -E "NEEDED|SONAME" || true
 
-# Tirar o "-I${includedir}" redundante do sdl2.pc (atrapalha headers do C++).
+# Remove the redundant "-I${includedir}" from sdl2.pc (it confuses C++ headers).
 sf="$PREFIX/lib/pkgconfig/sdl2.pc"
 if [ -f "$sf" ]; then
     sed -i 's|-I\${includedir} \(-I\${includedir}/SDL2\)|\1|' "$sf"
 fi
 
 ##############################################################################
-# 3) SDL2_mixer — MP3 (minimp3) e Ogg (stb_vorbis) embutidos. Sem MIDI.
+# 3) SDL2_mixer - built-in MP3 (minimp3) and Ogg (stb_vorbis). No MIDI.
 ##############################################################################
 echo "==[ SDL2_mixer ]==============================================="
 export CFLAGS="$COMMON_CFLAGS"
 export CXXFLAGS="$COMMON_CFLAGS"
-# Algumas libs do SDL2 pre-compilado (json-c, libmi_*) so existem no aparelho;
-# nao deixar o linker reclamar delas durante os testes do configure.
+# Some libraries of the prebuilt SDL2 (json-c, libmi_*) only exist on the device;
+# keep the linker from complaining about them during configure tests.
 export LDFLAGS="-L$PREFIX/lib -Wl,--allow-shlib-undefined -Wl,-rpath-link,$PREFIX/lib"
 
 BUILD_DIR=/tmp/build-deps
@@ -127,9 +127,9 @@ make -j$NPROC
 make install
 
 ##############################################################################
-# Teste de link: um programa minimo usando SDL2 + SDL2_mixer.
+# Link test: a minimal program using SDL2 + SDL2_mixer.
 ##############################################################################
-echo "==[ teste de link ]============================================"
+echo "==[ link test ]==============================================="
 cat > /tmp/t.c <<'T_EOF'
 #include <SDL.h>
 #include <SDL_mixer.h>
@@ -139,11 +139,11 @@ ${HOST_TRIPLE}-gcc $COMMON_CFLAGS /tmp/t.c -o /tmp/t \
     -I"$PREFIX/include/SDL2" -D_REENTRANT -L"$PREFIX/lib" \
     -lSDL2_mixer -lSDL2 -lm -ldl -lpthread \
     -Wl,--allow-shlib-undefined -Wl,-rpath-link,"$PREFIX/lib" \
-    || { echo "TESTE DE LINK FALHOU"; exit 1; }
-echo "teste de link OK"
+    || { echo "LINK TEST FAILED"; exit 1; }
+echo "link test OK"
 
 rm -rf "$BUILD_DIR"
-echo "==[ verificacao ]=============================================="
+echo "==[ check ]==================================================="
 ls -la "$PREFIX/lib" | grep -i -E "sdl|freetype|EGL|GLES|libmi_" || true
 ls -la "$PREFIX/lib/pkgconfig/"
-echo "==[ pronto ]==================================================="
+echo "==[ done ]===================================================="

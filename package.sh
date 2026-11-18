@@ -1,28 +1,28 @@
 #!/bin/bash
-# Monta a pasta de "port" do Onion para um jogo System 3.x (xsystem35-sdl2).
-# O mesmo binario serve para qualquer jogo suportado; so muda a pasta.
+# Builds the OnionOS "port" folder for a System 3.x game (xsystem35-sdl2).
+# The same binary works for every supported game; only the folder changes.
 #
-# Uso:
-#   sudo ./package.sh [--release] <xsystem35-sdl2> <pasta do jogo> [NomeDaPasta] ["Nome no menu"] [fonte.ttf]
+# Usage:
+#   sudo ./package.sh [--release] <xsystem35-sdl2> <game folder> [FolderName] ["Menu name"] [font.ttf]
 #
-# --release: monta o pacote PUBLICO (para os Releases do GitHub): sem os
-#   arquivos do jogo, sem capa, com instrucoes em ingles e um .zip pronto em
-#   dist/<NomeDaPasta>-miyoo-onion.zip. A pasta do jogo ainda e necessaria:
-#   o script le dela o nome do arquivo *SA.ALD e se a musica e MIDI (.sf2).
-# Exemplos:
+# --release: builds the PUBLIC package (for GitHub Releases): without the
+#   game files and box art, with install instructions and a ready .zip in
+#   dist/<FolderName>-miyoo-onion.zip. The game folder is still needed: the
+#   script reads the *SA.ALD file name from it and whether the music is MIDI.
+# Examples:
 #   sudo ./package.sh ~/xsystem35-sdl2 ~/KichikuouRance KichikuouRance "Kichikuou Rance"
 #   sudo ./package.sh ~/xsystem35-sdl2 ~/Rance1 Rance1 "Rance 1"
-# NomeDaPasta (sem espacos) vira o nome da pasta, do atalho e da capa.
-# Se omitido, usa o nome da pasta do jogo.
+# FolderName (no spaces) becomes the name of the folder, the shortcut and the
+# box art. If omitted, the game folder's name is used.
 #
-# O resultado fica em ./dist/<NomeDaPasta>/Roms/... : copie essa pasta "Roms"
-# para a raiz do cartao SD (ela se mistura com a Roms/ que ja existe).
+# The output is in ./dist/<FolderName>/Roms/... : copy that "Roms" folder to
+# the root of the SD card (it merges with the Roms/ folder already there).
 #
-# Estrutura gerada:
-#   Roms/PORTS/Games/<NomeDaPasta>/   binario, launch.sh, lib/, fonts/, game/, save/
-#                                     (+ midiconv, se o jogo tiver musica MIDI)
-#   Roms/PORTS/Shortcuts/Adventure/<NomeDaPasta>.port
-#   Roms/PORTS/Imgs/<NomeDaPasta>.png   (capa, se existir <NomeDaPasta>.png ao lado do script)
+# Generated layout:
+#   Roms/PORTS/Games/<FolderName>/    binary, launch.sh, lib/, fonts/, game/, save/
+#                                     (+ midiconv, if the game has MIDI music)
+#   Roms/PORTS/Shortcuts/Adventure/<FolderName>.port
+#   Roms/PORTS/Imgs/<FolderName>.png  (box art, if <FolderName>.png is next to this script)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -46,41 +46,50 @@ if [ -z "$APP_NAME" ]; then
     fi
 fi
 case "$APP_NAME" in
-    *[!A-Za-z0-9_-]*) echo "ERRO: NomeDaPasta so pode ter letras, numeros, - e _ (sem espacos): $APP_NAME"; exit 1 ;;
+    *[!A-Za-z0-9_-]*) echo "ERROR: FolderName may only contain letters, digits, - and _ (no spaces): $APP_NAME"; exit 1 ;;
 esac
 GAME_TITLE="${GAME_TITLE:-$APP_NAME}"
 BIN="$SRC/build-arm/src/xsystem35"
 OWNER="${SUDO_UID:-$(id -u)}:${SUDO_GID:-$(id -g)}"
 
 if [ ! -f "$BIN" ]; then
-    echo "ERRO: binario nao encontrado em $BIN"
-    echo "Rode antes:  sudo ./build.sh $SRC"
+    echo "ERROR: binary not found: $BIN"
+    echo "Run first:  sudo ./build.sh $SRC"
     exit 1
 fi
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-    echo "ERRO: imagem Docker '$IMAGE' nao existe. Rode ./build.sh primeiro."
+    echo "ERROR: Docker image '$IMAGE' does not exist. Run ./build.sh first."
     exit 1
 fi
 
 GAME_DATA_FILE="xsystem35"
 IS_MIDI=0
+IS_RANCE2=0
 if [ "$RELEASE" = 1 ]; then
     if [ -z "$GAME_SRC" ] || [ ! -d "$GAME_SRC" ]; then
-        echo "ERRO: no modo --release a pasta do jogo e obrigatoria (para achar o *SA.ALD)"
+        echo "ERROR: --release needs the game folder (to find the *SA.ALD file)"
         exit 1
     fi
     SA="$(find "$GAME_SRC" -maxdepth 1 -iname '*SA.ALD' -printf '%f\n' | head -1)"
     if [ -z "$SA" ]; then
-        echo "ERRO: nao achei o arquivo *SA.ALD em $GAME_SRC"
+        echo "ERROR: no *SA.ALD file found in $GAME_SRC"
         exit 1
     fi
-    # O Onion so mostra o port quando este arquivo existir (jogo instalado).
-    # O ~Import ports procura com  find <GameDir> -maxdepth 2 -iname <nome>,
-    # entao aqui vai SO o nome do arquivo (acha em game/, que e nivel 2).
+    # OnionOS only shows the port once this file exists (game installed).
+    # "~Import ports" searches with  find <GameDir> -maxdepth 2 -iname <name>,
+    # so this must be the bare file name (it is found in game/, level 2).
     GAME_DATA_FILE="$SA"
+    # Rance II: the game is haniwa's Japanese build + velt211's translation,
+    # which brings System39.ain. The Japanese build also has RANCE2SA.ALD, so
+    # the shortcut depends on System39.ain: it only shows up once the
+    # translation has been copied.
+    if [ "$(echo "$SA" | tr a-z A-Z)" = "RANCE2SA.ALD" ]; then
+        IS_RANCE2=1
+        GAME_DATA_FILE="System39.ain"
+    fi
 fi
-# Jogo com musica MIDI (traz um .sf2): vai junto o conversor midiconv, que
-# grava as musicas em WAV no proprio Miyoo na primeira vez que o jogo abre.
+# Game with MIDI music (ships a .sf2): add the midiconv converter, which
+# renders the music to WAV on the Miyoo itself the first time the game starts.
 if [ -n "$GAME_SRC" ] && [ -d "$GAME_SRC" ] && \
    [ -n "$(find "$GAME_SRC" -maxdepth 1 -iname '*.sf2' -print -quit)" ]; then
     IS_MIDI=1
@@ -93,14 +102,14 @@ SHORTCUTS="$PORTS/Shortcuts/Adventure"
 
 rm -rf "$DIST"
 mkdir -p "$APP/lib" "$APP/fonts" "$APP/game" "$APP/save" "$APP/log" "$SHORTCUTS"
-# O script roda como root (sudo), mas o Docker usa o seu usuario: as pastas
-# precisam ser suas, senao o strip/cp dentro do container nao consegue gravar.
+# The script runs as root (sudo), but Docker runs as your user: the folders
+# must be yours, or strip/cp inside the container can't write to them.
 chown -R "$OWNER" "$DIST" 2>/dev/null || true
 
 ##############################################################################
-# 1. Binario (sem simbolos de debug, para ficar menor)
+# 1. Binary (without debug symbols, to make it smaller)
 ##############################################################################
-echo "==> Binario"
+echo "==> Binary"
 cp "$BIN" "$APP/xsystem35"
 chmod 755 "$APP/xsystem35"
 chown "$OWNER" "$APP/xsystem35" 2>/dev/null || true
@@ -108,10 +117,10 @@ docker run --rm --user "$OWNER" -v "$DIST":/dist "$IMAGE" \
     arm-linux-gnueabihf-strip -s "/dist/Roms/PORTS/Games/$APP_NAME/xsystem35"
 
 ##############################################################################
-# 1b. Conversor de musica MIDI (so para jogos com .sf2)
+# 1b. MIDI music converter (only for games with a .sf2)
 ##############################################################################
 if [ "$IS_MIDI" = 1 ]; then
-    echo "==> Conversor de musica MIDI (midiconv)"
+    echo "==> MIDI music converter (midiconv)"
     docker run --rm --user "$OWNER" -v "$HERE":/src:ro -v "$DIST":/dist "$IMAGE" bash -c '
         set -e
         OUT=/dist/Roms/PORTS/Games/'"$APP_NAME"'/midiconv
@@ -125,12 +134,12 @@ if [ "$IS_MIDI" = 1 ]; then
 fi
 
 ##############################################################################
-# 2. Bibliotecas: SDL2 do Miyoo + EGL/GLES virtuais (guardados na imagem em
-#    /opt/miyoo-runtime), json-c, zlib e freetype do sysroot. As libs da
-#    SigmaStar (libmi_*, libshmvar) NAO vao: o aparelho ja tem as dele
-#    (testado sem elas).
+# 2. Libraries: the Miyoo SDL2 + virtual EGL/GLES (kept in the image in
+#    /opt/miyoo-runtime), json-c, zlib and freetype from the sysroot. The
+#    SigmaStar libraries (libmi_*, libshmvar) are NOT included: the device
+#    has its own (tested without them).
 ##############################################################################
-echo "==> Bibliotecas"
+echo "==> Libraries"
 docker run --rm --user "$OWNER" -v "$DIST":/dist "$IMAGE" bash -c '
     set -e
     SYSROOT=$(arm-linux-gnueabihf-gcc -print-sysroot)
@@ -142,12 +151,12 @@ docker run --rm --user "$OWNER" -v "$DIST":/dist "$IMAGE" bash -c '
             cp -L "/opt/miyoo-runtime/$f" "$OUT/$f"
             echo "  lib: $f"
         else
-            echo "  ERRO: $f nao esta na imagem. Rode ./build.sh de novo."
+            echo "  ERROR: $f is not in the image. Run ./build.sh again."
             exit 1
         fi
     done
 
-    # MIDI (opcional): o SDL2_mixer carrega esta lib so se o jogo usar MIDI.
+    # MIDI (optional): SDL2_mixer only loads this library if the game uses MIDI.
     if [ -e /opt/miyoo-runtime/libfluidsynth.so.3 ]; then
         cp -L /opt/miyoo-runtime/libfluidsynth.so.3 "$OUT/"
         echo "  lib: libfluidsynth.so.3"
@@ -165,7 +174,7 @@ docker run --rm --user "$OWNER" -v "$DIST":/dist "$IMAGE" bash -c '
             arm-linux-gnueabihf-strip --strip-unneeded "$OUT/$1" 2>/dev/null || true
             echo "  lib: $1"
         else
-            echo "  AVISO: $1 nao encontrada no sysroot (o aparelho precisa ter)"
+            echo "  WARNING: $1 not found in the sysroot (the device must have it)"
         fi
     }
 
@@ -180,34 +189,34 @@ docker run --rm --user "$OWNER" -v "$DIST":/dist "$IMAGE" bash -c '
 '
 
 ##############################################################################
-# 3. Fonte (opcional agora, mas necessaria para exibir os kanji no aparelho)
+# 3. Font (optional; needed to show kanji if the game has no fonts of its own)
 ##############################################################################
 if [ -n "$FONT_SRC" ]; then
     if [ -f "$FONT_SRC" ]; then
-        echo "==> Fonte: $FONT_SRC"
+        echo "==> Font: $FONT_SRC"
         cp "$FONT_SRC" "$APP/fonts/font.ttf"
     else
-        echo "AVISO: fonte nao encontrada: $FONT_SRC"
+        echo "WARNING: font not found: $FONT_SRC"
     fi
 else
-    echo "==> Sem fonte extra (ok se o jogo trouxer as suas, como MTLc3m.ttf e mincho.otf)"
+    echo "==> No extra font (fine if the game ships its own, such as MTLc3m.ttf and mincho.otf)"
 fi
 
 ##############################################################################
-# 4. Arquivos do jogo (opcional: voce tambem pode copiar direto pro cartao SD)
+# 4. Game files (optional: you can also copy them straight to the SD card)
 ##############################################################################
 if [ "$RELEASE" = 1 ]; then
-    echo "==> Release: sem os arquivos do jogo"
+    echo "==> Release: without the game files"
     cat > "$APP/game/PUT_GAME_FILES_HERE.txt" <<PLACEHOLDER_EOF
 Copy the game files here (the .ALD files and everything else from the
 game folder). See ../INSTALL.txt.
 PLACEHOLDER_EOF
 elif [ -n "$GAME_SRC" ]; then
     if [ -d "$GAME_SRC" ]; then
-        echo "==> Copiando o jogo de $GAME_SRC (pode demorar)"
+        echo "==> Copying the game from $GAME_SRC (may take a while)"
         cp -r "$GAME_SRC"/. "$APP/game/"
     else
-        echo "AVISO: pasta do jogo nao encontrada: $GAME_SRC"
+        echo "WARNING: game folder not found: $GAME_SRC"
     fi
 fi
 
@@ -216,38 +225,38 @@ fi
 ##############################################################################
 cat > "$APP/launch.sh" <<'LAUNCH_EOF'
 #!/bin/sh
-# Launcher de jogo System 3.x (xsystem35-sdl2) para Miyoo Mini / OnionOS.
+# System 3.x game launcher (xsystem35-sdl2) for Miyoo Mini / OnionOS.
 APPDIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$APPDIR"
 mkdir -p "$APPDIR/save" "$APPDIR/log"
 LOGFILE="$APPDIR/log/run.log"
 
-# Bibliotecas: as nossas primeiro; depois as do firmware do aparelho
-# (libmi_*, libshmvar, libjson-c) e as do Onion.
+# Libraries: ours first, then the device firmware's
+# (libmi_*, libshmvar, libjson-c) and OnionOS's.
 export LD_LIBRARY_PATH="$APPDIR/lib:/config/lib:/customer/lib:/mnt/SDCARD/miyoo/lib:/mnt/SDCARD/.tmp_update/lib:${LD_LIBRARY_PATH:-}"
 
-# Drivers do SDL2 do Miyoo Mini (steward-fu/sdl2). Os nomes vem dos
-# VideoBootStrap/AudioBootStrap do codigo: video "Mini", audio "Miyoo Mini".
+# Miyoo Mini SDL2 drivers (steward-fu/sdl2). The names come from the
+# VideoBootStrap/AudioBootStrap in its source: video "Mini", audio "Miyoo Mini".
 export SDL_VIDEODRIVER="Mini"
 export SDL_AUDIODRIVER="Miyoo Mini"
 
-# Mude para 1 para gravar no log/run.log os quadros por segundo do cursor.
+# Set to 1 to log the cursor frame rate to log/run.log.
 export MIYOO_FPS_LOG=0
 
-# Musica MIDI: usa o banco de sons (.sf2) que vier com o jogo.
+# MIDI music: use the sound bank (.sf2) that comes with the game.
 SF2=$(ls "$APPDIR"/game/*.sf2 "$APPDIR"/game/*.SF2 2>/dev/null | head -1)
 if [ -n "$SF2" ]; then
     export SDL_SOUNDFONTS="$SF2"
 fi
 
-# Musica MIDI: na primeira vez, converte as musicas para WAV (game/midi/),
-# com uma tela de progresso. Se for interrompido, continua da proxima vez.
-# Menu cancela e volta para o Onion (codigo 3).
+# MIDI music: the first time, convert the music to WAV (game/midi/), with a
+# progress screen. If interrupted, it continues the next time.
+# Menu cancels and returns to OnionOS (exit code 3).
 if [ -n "$SF2" ] && [ -x "$APPDIR/midiconv" ] && [ ! -f "$APPDIR/game/midi/.done" ]; then
     echo "== midiconv @ $(date)" >> "$APPDIR/log/midiconv.log"
     "$APPDIR/midiconv" "$APPDIR/game" 22050 >> "$APPDIR/log/midiconv.log" 2>&1
     MRC=$?
-    echo "midiconv terminou com codigo $MRC" >> "$APPDIR/log/midiconv.log"
+    echo "midiconv exited with code $MRC" >> "$APPDIR/log/midiconv.log"
     sync
     if [ "$MRC" = 3 ]; then
         exit 0
@@ -262,25 +271,25 @@ fi
 {
     echo "== $(basename "$APPDIR") @ $(date)"
     echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
-    echo "fonte: ${FONT_OPTS:-nenhuma}"
-    echo "soundfont (MIDI): ${SDL_SOUNDFONTS:-nenhum}"
-    echo "arquivos do jogo:"
+    echo "font: ${FONT_OPTS:-none}"
+    echo "soundfont (MIDI): ${SDL_SOUNDFONTS:-none}"
+    echo "game files:"
     ls "$APPDIR/game" 2>&1 | head -20
     echo "----"
 } > "$LOGFILE" 2>&1
 
 # --- Audio -----------------------------------------------------------------
-# O Onion roda um "audioserver" que segura o dispositivo de som (MI_AO). Com
-# ele ativo, o driver do SDL falha com "MI_AO_SetPubAttr ... 0xa0052009".
-# Os ports oficiais do Onion fazem o mesmo (opcao KillAudioserver=1):
-# paramos o audioserver durante o jogo e religamos depois.
+# OnionOS runs an "audioserver" that holds the audio device (MI_AO). While it
+# runs, the SDL driver fails with "MI_AO_SetPubAttr ... 0xa0052009".
+# Onion's official ports do the same (KillAudioserver=1 option): stop the
+# audioserver while the game runs and start it again afterwards.
 unset LD_PRELOAD
 AUDIO_CMD=""
 for name in audioserver audioserver.mod; do
     PID=$(pidof "$name" 2>/dev/null | awk '{print $1}')
     if [ -n "$PID" ]; then
         AUDIO_CMD=$(tr '\0' ' ' < /proc/$PID/cmdline 2>/dev/null)
-        echo "parando $name (pid $PID): $AUDIO_CMD" >> "$LOGFILE"
+        echo "stopping $name (pid $PID): $AUDIO_CMD" >> "$LOGFILE"
     fi
 done
 if [ -f /mnt/SDCARD/.tmp_update/script/stop_audioserver.sh ]; then
@@ -288,16 +297,26 @@ if [ -f /mnt/SDCARD/.tmp_update/script/stop_audioserver.sh ]; then
 fi
 killall -9 audioserver audioserver.mod 2>/dev/null
 sleep 0.3
-echo "processos de audio restantes:" >> "$LOGFILE"
+echo "remaining audio processes:" >> "$LOGFILE"
 ps 2>/dev/null | grep -i audio | grep -v grep >> "$LOGFILE" 2>&1
 echo "----" >> "$LOGFILE"
+
+# Games with System39.ain (such as the translated Rance II): xsystem35 only
+# reads that file if xsystem35.gr has an "Ain System39.ain" line. Add it if
+# missing, so nobody has to edit the file by hand.
+GR="$APPDIR/game/xsystem35.gr"
+AIN=$(ls "$APPDIR/game" 2>/dev/null | grep -i '^system39\.ain$' | head -1)
+if [ -f "$GR" ] && [ -n "$AIN" ] && ! grep -qi '^Ain' "$GR"; then
+    printf '\nAin %s\n' "$AIN" >> "$GR"
+    echo "added 'Ain $AIN' to xsystem35.gr" >> "$LOGFILE"
+fi
 
 cd "$APPDIR/game" || exit 1
 "$APPDIR/xsystem35" -savedir "$APPDIR/save" $FONT_OPTS >> "$LOGFILE" 2>&1
 RC=$?
-echo "xsystem35 terminou com codigo $RC" >> "$LOGFILE"
+echo "xsystem35 exited with code $RC" >> "$LOGFILE"
 
-# Religar o audioserver para o resto do Onion voltar a ter som.
+# Start the audioserver again so the rest of OnionOS has sound.
 if [ -f /mnt/SDCARD/.tmp_update/script/start_audioserver.sh ]; then
     . /mnt/SDCARD/.tmp_update/script/start_audioserver.sh >> "$LOGFILE" 2>&1
 elif [ -n "$AUDIO_CMD" ]; then
@@ -308,11 +327,12 @@ LAUNCH_EOF
 chmod 755 "$APP/launch.sh"
 
 ##############################################################################
-# 6. Atalho do Onion (aparece na biblioteca de jogos depois de "Refresh roms")
+# 6. OnionOS shortcut (shows up in Ports after "~Import ports")
 ##############################################################################
-# O "~Import ports" do Onion procura GameDataFile (ou GameExecutable, se nao
-# houver GameDataFile) DENTRO de Roms/PORTS/Games/<GameDir>/. Por isso GameDir
-# e so o nome da pasta. Se o arquivo nao existe, o atalho vira .notfound.
+# Onion's "~Import ports" looks for GameDataFile (or GameExecutable, if there
+# is no GameDataFile) INSIDE Roms/PORTS/Games/<GameDir>/. That's why GameDir
+# is just the folder name. If the file doesn't exist, the shortcut becomes
+# .notfound.
 cat > "$SHORTCUTS/$APP_NAME.port" <<PORT_EOF
 #!/bin/sh
 # main configuration :
@@ -327,37 +347,37 @@ PORT_EOF
 chmod 755 "$SHORTCUTS/$APP_NAME.port"
 
 ##############################################################################
-# 6b. Capa do jogo na biblioteca do Onion (Roms/PORTS/Imgs/<nome>.png).
-#     Usa a <NomeDaPasta>.png que estiver na mesma pasta deste script.
+# 6b. Box art for the OnionOS library (Roms/PORTS/Imgs/<name>.png).
+#     Uses the <FolderName>.png next to this script.
 ##############################################################################
 BOX_ART="$HERE/$APP_NAME.png"
 if [ "$RELEASE" = 1 ]; then
-    echo "==> Release: sem capa"
+    echo "==> Release: no box art"
 elif [ -f "$BOX_ART" ]; then
     mkdir -p "$PORTS/Imgs"
     cp "$BOX_ART" "$PORTS/Imgs/$APP_NAME.png"
-    echo "==> Capa: $APP_NAME.png"
+    echo "==> Box art: $APP_NAME.png"
 else
-    echo "AVISO: sem capa (coloque $APP_NAME.png em $HERE)"
+    echo "WARNING: no box art (put $APP_NAME.png in $HERE)"
 fi
 
 ##############################################################################
-# 7. Instrucoes
+# 7. Instructions
 ##############################################################################
 if [ "$RELEASE" = 1 ]; then
-    # A ferramenta de MIDI vai dentro da pasta do port (Roms/.../tools/).
+    # The MIDI tool goes inside the port folder (Roms/.../tools/).
     if [ "$IS_MIDI" = 1 ]; then
         mkdir -p "$APP/tools"
         cp "$HERE/tools/prerender_midi.py" "$APP/tools/"
-        echo "==> Release: tools/prerender_midi.py incluido (opcional, musica MIDI)"
+        echo "==> Release: tools/prerender_midi.py included (optional, MIDI music)"
         MIDI_NOTE="
 MIDI MUSIC
   This game's music is MIDI, which is too heavy to play on the Miyoo while
   the game runs. The FIRST time you open the game, a screen converts the
   music to WAV files (in game/midi/). It takes a few minutes and needs free
-  space on the SD card (Rance 1: about 5 min / 200 MB; Rance III: about
-  10 min / 420 MB). Press Menu to stop: it continues the next time you open
-  the game. After that the game starts directly.
+  space on the SD card (Rance 1: about 5 min / 200 MB; Rance II and
+  Rance III: about 12 min / 430 MB). Press Menu to stop: it continues the
+  next time you open the game. After that the game starts directly.
 
   Optional, faster and smaller: convert the music to MP3 on a PC instead.
   Requirements: Linux, or Windows with WSL (Ubuntu), plus:
@@ -374,12 +394,29 @@ MIDI MUSIC
     else
         MIDI_NOTE=""
     fi
-    cat > "$APP/INSTALL.txt" <<RELEASE_EOF
-$GAME_TITLE for Miyoo Mini / Miyoo Mini Plus (OnionOS)
-============================================================
-xsystem35-sdl2 port. Source and instructions: $REPO_URL
+    if [ "$IS_RANCE2" = 1 ]; then
+        GAME_STEPS="This package does NOT include the game or the translation. Both are free:
+  - the Japanese Rance II (RanceII .tar.gz) from https://haniwa.technology/games/
+  - velt211's English translation port from
+    https://alicesoft.miraheze.org/wiki/User_blog:Velt211/Rance_II_translation_port_release
 
-This package does NOT include the game. Get it for free from
+1. Extract this zip on your PC.
+
+2. Extract the Japanese RanceII .tar.gz and copy everything from it
+   (the .ALD files and the rest) into the zip's folder:
+       Roms/PORTS/Games/$APP_NAME/game/
+
+3. Extract the translation (\"Rance II [ENG]\") and copy ONLY these 3 files
+   into the same game/ folder, replacing the Japanese ones:
+       RANCE2SA.ALD
+       RANCE2GA.ald
+       System39.ain
+   (The other files - SETUP.EXE, System39.exe, System39.ini,
+   System39.ain_decrypted - are for Windows and are not needed.)
+   The game only shows up in OnionOS once System39.ain is in place.
+"
+    else
+        GAME_STEPS="This package does NOT include the game. Get it for free from
 https://haniwa.technology/games/ (the English .tar.gz build).
 
 1. Extract this zip on your PC.
@@ -389,7 +426,14 @@ https://haniwa.technology/games/ (the English .tar.gz build).
 3. Copy everything from the game folder (the .ALD files and the rest)
    into the zip's folder:
        Roms/PORTS/Games/$APP_NAME/game/
+"
+    fi
+    cat > "$APP/INSTALL.txt" <<RELEASE_EOF
+$GAME_TITLE for Miyoo Mini / Miyoo Mini Plus (OnionOS)
+============================================================
+xsystem35-sdl2 port. Source and instructions: $REPO_URL
 
+\${GAME_STEPS}
 4. Copy the Roms folder to the ROOT of the SD card (it merges with
    the Roms folder already there).
 
@@ -404,58 +448,62 @@ CONTROLS
   B ................ right click (cancel / game menu)
   Start ............ Enter
   Select ........... toggle message skip
-  Menu ............. quit dialog (A confirms, B cancels)
+  Menu ............. pause menu: RESUME / RESTART / EXIT GAME
+                     (A selects, B resumes; restart and exit ask
+                     "ARE YOU SURE?", press A again to confirm)
 
 If the game does not start, check:
        Roms/PORTS/Games/$APP_NAME/log/run.log
 RELEASE_EOF
-    # As variaveis do texto acima foram escritas literalmente; trocar agora.
-    python3 - "$APP/INSTALL.txt" "$MIDI_NOTE" <<'PYEOF'
+    # The placeholders in the text above were written literally; fill them in.
+    python3 - "$APP/INSTALL.txt" "$MIDI_NOTE" "$GAME_STEPS" <<'PYEOF'
 import sys
-path, midi = sys.argv[1], sys.argv[2]
-t = open(path).read().replace("${MIDI_NOTE}", midi)
+path, midi, steps = sys.argv[1], sys.argv[2], sys.argv[3]
+t = open(path).read().replace("${MIDI_NOTE}", midi).replace("${GAME_STEPS}", steps)
 open(path, "w").write(t)
 PYEOF
 else
 cat > "$APP/INSTALL.txt" <<INSTALL_EOF
-$GAME_TITLE (xsystem35-sdl2) para Miyoo Mini + OnionOS
+$GAME_TITLE (xsystem35-sdl2) for Miyoo Mini + OnionOS
 =====================================================
 
-1. Copie a pasta "Roms" deste pacote para a RAIZ do cartao SD do Miyoo
-   (ela se mistura com a Roms/ que ja existe).
+1. Copy the "Roms" folder of this package to the ROOT of the Miyoo SD card
+   (it merges with the Roms/ folder already there).
 
-2. Copie os arquivos do jogo (os .ALD e demais arquivos da instalacao
-   original) para:
+2. If the game files are not included yet, copy them (the .ALD files and
+   the rest of the game folder) to:
        /Roms/PORTS/Games/$APP_NAME/game/
 
-3. Para exibir os kanji, coloque uma fonte TrueType japonesa em:
+3. If the game has no fonts of its own, put a Japanese TrueType font in:
        /Roms/PORTS/Games/$APP_NAME/fonts/font.ttf
 
-4. No Onion, rode "Refresh roms". O jogo aparece na biblioteca.
+4. In OnionOS, open Ports and run "~Import ports".
 
-CONTROLES
-  D-pad ............ move o cursor (segure para acelerar)
-  R1 (segurar) ..... cursor rapido
-  L1 + D-pad ....... setas do teclado
-  A ................ clique esquerdo
-  B ................ clique direito (cancelar / menu do jogo)
+CONTROLS
+  D-pad ............ move the cursor (hold to accelerate)
+  R1 (hold) ........ fast cursor
+  L1 + D-pad ....... keyboard arrow keys
+  A ................ left click
+  B ................ right click (cancel / game menu)
   Start ............ Enter
-  Select ........... liga/desliga o pulo de mensagens
-  Menu ............. pergunta se quer sair (A confirma, B cancela)
+  Select ........... toggle message skip
+  Menu ............. pause menu: RESUME / RESTART / EXIT GAME
+                     (A selects, B resumes; restart and exit ask
+                     "ARE YOU SURE?", press A again to confirm)
 
-Se nao abrir, veja o arquivo:
+If the game does not start, check:
        /Roms/PORTS/Games/$APP_NAME/log/run.log
 INSTALL_EOF
 fi
 
-# Se rodou com sudo, devolver os arquivos para o seu usuario.
+# If run with sudo, give the files back to your user.
 chown -R "$OWNER" "$DIST" 2>/dev/null || true
 
 echo
-echo "==> Pacote pronto em: $DIST/Roms"
+echo "==> Package ready in: $DIST/Roms"
 du -sh "$DIST/Roms"
 echo
-echo "Estrutura:"
+echo "Layout:"
 ( cd "$DIST" && find Roms -maxdepth 4 | sort )
 echo
 if [ "$RELEASE" = 1 ]; then
@@ -475,8 +523,8 @@ with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
             z.write(full, os.path.join(rel, f))
 PYEOF
     chown "$OWNER" "$ZIP" 2>/dev/null || true
-    echo "==> Zip do Release: $ZIP"
+    echo "==> Release zip: $ZIP"
     du -h "$ZIP"
 else
-    echo "Copie a pasta Roms para a raiz do cartao SD do Miyoo Mini."
+    echo "Copy the Roms folder to the root of the Miyoo Mini SD card."
 fi

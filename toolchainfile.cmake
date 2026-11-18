@@ -1,6 +1,6 @@
-# Toolchain do CMake para Miyoo Mini. Só funciona dentro do container Docker
-# (os caminhos do compilador e do sysroot são do container).
-# Adaptado do toolchainfile.cmake do OpenRCT2mini.
+# CMake toolchain for the Miyoo Mini. Only works inside the Docker container
+# (the compiler and sysroot paths are the container's).
+# Adapted from OpenRCT2mini's toolchainfile.cmake.
 
 set(CMAKE_SYSTEM_NAME Linux)
 set(CMAKE_SYSTEM_PROCESSOR arm)
@@ -25,17 +25,17 @@ set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 
-# Evita -isystem nos headers importados (quebra o #include_next do libstdc++).
+# Avoid -isystem for imported headers (it breaks libstdc++'s #include_next).
 set(CMAKE_NO_SYSTEM_FROM_IMPORTED TRUE)
 
-# Cortex-A7 com NEON-VFPv4.
-# -DMIYOO_MINI liga o modo de controles/cursor do Miyoo (miyoo/miyoo.c).
+# Cortex-A7 with NEON-VFPv4.
+# -DMIYOO_MINI enables the Miyoo controls/cursor mode (miyoo/miyoo.c).
 set(MIYOOMINI_FLAGS "-marm -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard -march=armv7ve -DMIYOO_MINI")
 set(CMAKE_C_FLAGS_INIT   "${MIYOOMINI_FLAGS}")
 set(CMAKE_CXX_FLAGS_INIT "${MIYOOMINI_FLAGS}")
 
-# Runtime C++ estático e libs dinâmicas procuradas em ./lib ao lado do binário.
-# --allow-shlib-undefined: o libSDL2 do Miyoo depende de libs que so existem no aparelho (json-c, libmi_*).
+# Static C++ runtime; shared libraries are looked up in ./lib next to the binary.
+# --allow-shlib-undefined: the Miyoo libSDL2 depends on libraries that only exist on the device (json-c, libmi_*).
 set(CMAKE_EXE_LINKER_FLAGS_INIT "-static-libstdc++ -static-libgcc -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath-link,${TOOLCHAIN_SYSROOT}/usr/lib -Wl,-rpath,'$ORIGIN/lib'")
 
 if(NOT CMAKE_BUILD_TYPE)
